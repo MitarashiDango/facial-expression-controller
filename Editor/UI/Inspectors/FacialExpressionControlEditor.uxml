@@ -1,0 +1,10 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="True">
+    <uie:PropertyField label="デフォルトの表情アニメーションを自動生成" tooltip="デフォルトの表情アニメーションをブレンドシェイプの値から自動生成します" binding-path="generateDefaultFacialAnimation" name="generate-default-facial-animation" />
+    <uie:PropertyField label="デフォルトの表情アニメーション" binding-path="defaultFace" type="UnityEngine.Motion, UnityEngine.AnimationModule" name="default-face" />
+    <uie:PropertyField label="表情トランジション時間" binding-path="transitionTime" name="transition-time" />
+    <ui:ListView show-border="true" virtualization-method="DynamicHeight" show-foldout-header="true" show-add-remove-footer="true" reorder-mode="Animated" header-title="表情ジェスチャープリセット" binding-path="facialExpressionGesturePresets" />
+    <ui:ListView virtualization-method="DynamicHeight" show-border="true" show-foldout-header="true" show-add-remove-footer="true" reorder-mode="Animated" header-title="表情グループ" binding-path="facialExpressionGroups" />
+    <uie:PropertyField label="AFKモードを使用する" binding-path="useAFKMode" name="use-afk-mode" />
+    <uie:PropertyField label="AFK終了待機時の挙動" type="MitarashiDango.FacialExpressionController.Runtime.AFKExitWaitMode, com.matcha-soft.facial-expression-controller.runtime" binding-path="afkExitWaitMode" name="afk-exit-wait-mode" />
+    <uie:PropertyField label="AFK終了後の待機時間" binding-path="waitAFKExitDurationTime" name="wait-afk-exit-duration-time" />
+</ui:UXML>
