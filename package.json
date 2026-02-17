@@ -1,11 +1,13 @@
 {
   "name": "com.matcha-soft.facial-expression-controller",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "displayName": "Facial Expression Controller",
   "description": "アバター向け表情コントローラー (v2)",
   "unity": "2022.3",
   "vpmDependencies": {
-    "com.vrchat.avatars": ">=3.7.4"
+    "com.vrchat.avatars": ">=3.10.1",
+    "nadena.dev.ndmf": ">=1.11.0",
+    "nadena.dev.modular-avatar": ">=1.16.2"
   },
   "keywords": [],
   "author": {
