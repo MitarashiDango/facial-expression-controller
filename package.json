@@ -1,6 +1,6 @@
 {
   "name": "com.matcha-soft.facial-expression-controller",
-  "version": "1.0.0-alpha.2",
+  "version": "1.0.0-alpha.3",
   "displayName": "Facial Expression Controller",
   "description": "アバター向け表情コントローラー (v2)",
   "unity": "2022.3",
