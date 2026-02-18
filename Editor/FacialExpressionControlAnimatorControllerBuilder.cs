@@ -957,7 +957,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 .NotEqual(InternalParameters.State_CurrentGestureRight.name, 0)
                 .SetImmediateTransitionSettings();
 
-            Action<AnimatorStateMachine, AnimatorState, int> addGestureTransition = (stateMachine, state, gestureNumber) =>
+            Action<AnimatorStateMachine, AnimatorState, int, int> addGestureTransition = (stateMachine, state, gestureNumber, presetNumber) =>
             {
                 AnimatorTransitionUtil.AddEntryTransition(stateMachine, state)
                     .Equals(InternalParameters.State_CurrentGestureHand.name, 1)
@@ -986,6 +986,18 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     .Equals(InternalParameters.SelectedFacialExpressionInMenu.name, 0)
                     .Equals(InternalParameters.State_CurrentGestureHand.name, 2)
                     .NotEqual(InternalParameters.State_CurrentGestureRight.name, gestureNumber)
+                    .SetImmediateTransitionSettings();
+
+                AnimatorTransitionUtil.AddExitTransition(state)
+                    .Equals(InternalParameters.SelectedFacialExpressionInMenu.name, 0)
+                    .Equals(InternalParameters.State_CurrentGestureHand.name, 1)
+                    .NotEqual(InternalParameters.SelectedLeftGesturePreset.name, presetNumber)
+                    .SetImmediateTransitionSettings();
+
+                AnimatorTransitionUtil.AddExitTransition(state)
+                    .Equals(InternalParameters.SelectedFacialExpressionInMenu.name, 0)
+                    .Equals(InternalParameters.State_CurrentGestureHand.name, 2)
+                    .NotEqual(InternalParameters.SelectedRightGesturePreset.name, presetNumber)
                     .SetImmediateTransitionSettings();
             };
 
@@ -1027,7 +1039,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     CreateVRCAvatarParameterLocalSetDriver(SyncParameters.CurrentFacialExpressionNumber.name, i * 7 + 1),
                 };
 
-                addGestureTransition(gesturePresetStateMachine, fistState, 1);
+                addGestureTransition(gesturePresetStateMachine, fistState, 1, i);
 
                 var handOpenState = gesturePresetStateMachine.AddState("HandOpen", new Vector3(300, 80, 0));
                 handOpenState.writeDefaultValues = false;
@@ -1037,7 +1049,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     CreateVRCAvatarParameterLocalSetDriver(SyncParameters.CurrentFacialExpressionNumber.name, i * 7 + 2),
                 };
 
-                addGestureTransition(gesturePresetStateMachine, handOpenState, 2);
+                addGestureTransition(gesturePresetStateMachine, handOpenState, 2, i);
 
                 var fingerPointState = gesturePresetStateMachine.AddState("FingerPoint", new Vector3(300, 160, 0));
                 fingerPointState.writeDefaultValues = false;
@@ -1047,7 +1059,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     CreateVRCAvatarParameterLocalSetDriver(SyncParameters.CurrentFacialExpressionNumber.name, i * 7 + 3),
                 };
 
-                addGestureTransition(gesturePresetStateMachine, fingerPointState, 3);
+                addGestureTransition(gesturePresetStateMachine, fingerPointState, 3, i);
 
                 var victoryState = gesturePresetStateMachine.AddState("Victory", new Vector3(300, 240, 0));
                 victoryState.writeDefaultValues = false;
@@ -1057,7 +1069,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     CreateVRCAvatarParameterLocalSetDriver(SyncParameters.CurrentFacialExpressionNumber.name, i * 7 + 4),
                 };
 
-                addGestureTransition(gesturePresetStateMachine, victoryState, 4);
+                addGestureTransition(gesturePresetStateMachine, victoryState, 4, i);
 
                 var rockNRollState = gesturePresetStateMachine.AddState("RockNRoll", new Vector3(300, 320, 0));
                 rockNRollState.writeDefaultValues = false;
@@ -1067,7 +1079,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     CreateVRCAvatarParameterLocalSetDriver(SyncParameters.CurrentFacialExpressionNumber.name, i * 7 + 5),
                 };
 
-                addGestureTransition(gesturePresetStateMachine, rockNRollState, 5);
+                addGestureTransition(gesturePresetStateMachine, rockNRollState, 5, i);
 
                 var handGunState = gesturePresetStateMachine.AddState("HandGun", new Vector3(300, 400, 0));
                 handGunState.writeDefaultValues = false;
@@ -1077,7 +1089,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     CreateVRCAvatarParameterLocalSetDriver(SyncParameters.CurrentFacialExpressionNumber.name, i * 7 + 6),
                 };
 
-                addGestureTransition(gesturePresetStateMachine, handGunState, 6);
+                addGestureTransition(gesturePresetStateMachine, handGunState, 6, i);
 
                 var thumbsUpState = gesturePresetStateMachine.AddState("ThumbsUp", new Vector3(300, 480, 0));
                 thumbsUpState.writeDefaultValues = false;
@@ -1087,7 +1099,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     CreateVRCAvatarParameterLocalSetDriver(SyncParameters.CurrentFacialExpressionNumber.name, i * 7 + 7),
                 };
 
-                addGestureTransition(gesturePresetStateMachine, thumbsUpState, 7);
+                addGestureTransition(gesturePresetStateMachine, thumbsUpState, 7, i);
             }
 
             var selectedFacialExpressions = fec.facialExpressionGroups
