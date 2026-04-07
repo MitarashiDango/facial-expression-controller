@@ -74,7 +74,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             var ac = new AnimatorController
             {
-                name = "FEC_DEFAULT_FACIAL_EXPRESION",
+                name = "FEC_DEFAULT_FACIAL_EXPRESSION",
                 parameters = parameters.CreateAnimatorControllerParameters()
             };
 
