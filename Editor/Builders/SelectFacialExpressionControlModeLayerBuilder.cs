@@ -50,7 +50,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AnimatorTransitionUtil.AddTransition(initialState, neutralState)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-                .Equals(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
+
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -61,7 +61,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AnimatorTransitionUtil.AddTransition(initialState, neutralState)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-                .Equals(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
+
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -73,7 +73,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AnimatorTransitionUtil.AddTransition(initialState, neutralState)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-                .Equals(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
+
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -85,9 +85,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 .IfNot(InternalParameters.FacialExpressionControlON)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(neutralState)
-                .NotEqual(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
-                .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(neutralState)
                 .If(InternalParameters.State_AFKModeActive)
@@ -124,7 +121,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AnimatorTransitionUtil.AddTransition(initialState, leftHandGestureState)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-                .Equals(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
+
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -135,10 +132,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             AnimatorTransitionUtil.AddExitTransition(leftHandGestureState)
                 .IfNot(InternalParameters.FacialExpressionControlON)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureState)
-                .NotEqual(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(leftHandGestureState)
@@ -177,7 +170,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AnimatorTransitionUtil.AddTransition(initialState, leftHandGestureFixedState)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-                .Equals(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
+
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -188,10 +181,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             AnimatorTransitionUtil.AddExitTransition(leftHandGestureFixedState)
                 .IfNot(InternalParameters.FacialExpressionControlON)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureFixedState)
-                .NotEqual(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(leftHandGestureFixedState)
@@ -232,7 +221,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AnimatorTransitionUtil.AddTransition(initialState, rightHandGestureState)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-                .Equals(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
+
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -243,10 +232,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             AnimatorTransitionUtil.AddExitTransition(rightHandGestureState)
                 .IfNot(InternalParameters.FacialExpressionControlON)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureState)
-                .NotEqual(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(rightHandGestureState)
@@ -285,7 +270,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AnimatorTransitionUtil.AddTransition(initialState, rightHandGestureFixedState)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-                .Equals(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
+
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -296,10 +281,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             AnimatorTransitionUtil.AddExitTransition(rightHandGestureFixedState)
                 .IfNot(InternalParameters.FacialExpressionControlON)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureFixedState)
-                .NotEqual(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(rightHandGestureFixedState)
@@ -340,7 +321,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AnimatorTransitionUtil.AddTransition(initialState, selectedFacialExpressionInMenuState)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-                .Equals(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
+
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .NotEqual(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -348,10 +329,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             AnimatorTransitionUtil.AddExitTransition(selectedFacialExpressionInMenuState)
                 .IfNot(InternalParameters.FacialExpressionControlON)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(selectedFacialExpressionInMenuState)
-                .NotEqual(InternalParameters.FacialTrackingMode, FacialTrackingType.Inactive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(selectedFacialExpressionInMenuState)
@@ -366,71 +343,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
                 .SetImmediateTransitionSettings();
 
-            var builtInFacialTrackingState = layer.stateMachine.AddState("Built-in Facial Tracking", new Vector3(300, 640, 0));
-            builtInFacialTrackingState.writeDefaultValues = false;
-            builtInFacialTrackingState.motion = blankAnimationClip;
-            builtInFacialTrackingState.behaviours = new StateMachineBehaviour[]
-            {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.BuiltInFacialTracking),
-            };
-
-            AnimatorTransitionUtil.AddTransition(initialState, builtInFacialTrackingState)
-                .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
-                .Equals(InternalParameters.FacialTrackingMode, FacialTrackingType.BuiltInFacialTracking)
-                .IfNot(InternalParameters.State_AFKModeActive)
-                .IfNot(InternalParameters.State_DanceModeActive)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(builtInFacialTrackingState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(builtInFacialTrackingState)
-                .NotEqual(InternalParameters.FacialTrackingMode, FacialTrackingType.BuiltInFacialTracking)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(builtInFacialTrackingState)
-                .If(InternalParameters.State_AFKModeActive)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(builtInFacialTrackingState)
-                .If(InternalParameters.State_DanceModeActive)
-                .SetImmediateTransitionSettings();
-
-            var animatorBasedFacialTrackingState = layer.stateMachine.AddState("Animator Based Facial Tracking", new Vector3(300, 720, 0));
-            animatorBasedFacialTrackingState.writeDefaultValues = false;
-            animatorBasedFacialTrackingState.motion = blankAnimationClip;
-            animatorBasedFacialTrackingState.behaviours = new StateMachineBehaviour[]
-            {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.AnimatorBasedFacialTracking),
-            };
-
-            AnimatorTransitionUtil.AddTransition(initialState, animatorBasedFacialTrackingState)
-                .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
-                .Equals(InternalParameters.FacialTrackingMode, FacialTrackingType.AnimatorBasedFacialTracking)
-                .IfNot(InternalParameters.State_AFKModeActive)
-                .IfNot(InternalParameters.State_DanceModeActive)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(animatorBasedFacialTrackingState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(animatorBasedFacialTrackingState)
-                .NotEqual(InternalParameters.FacialTrackingMode, FacialTrackingType.AnimatorBasedFacialTracking)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(animatorBasedFacialTrackingState)
-                .If(InternalParameters.State_AFKModeActive)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(animatorBasedFacialTrackingState)
-                .If(InternalParameters.State_DanceModeActive)
-                .SetImmediateTransitionSettings();
-
-            var danceModeState = layer.stateMachine.AddState("Dance Mode", new Vector3(300, 800, 0));
+            var danceModeState = layer.stateMachine.AddState("Dance Mode", new Vector3(300, 640, 0));
             danceModeState.writeDefaultValues = false;
             danceModeState.motion = blankAnimationClip;
             danceModeState.behaviours = new StateMachineBehaviour[]

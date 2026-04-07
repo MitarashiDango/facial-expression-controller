@@ -12,9 +12,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public static readonly int RightHandGesture = 4;
         public static readonly int RightHandGestureFixed = 5;
         public static readonly int SelectedFacialExpressionInMenu = 6;
-        public static readonly int BuiltInFacialTracking = 7;
-        public static readonly int AnimatorBasedFacialTracking = 8;
-        public static readonly int DanceMode = 9;
-        public static readonly int AFKMode = 10;
+        public static readonly int DanceMode = 7;
+        public static readonly int AFKMode = 8;
     }
 }

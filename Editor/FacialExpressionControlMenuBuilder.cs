@@ -30,9 +30,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var selectFacialExpressionSubMenu = CreateSelectFacialExpressionSubMenu(fec);
             selectFacialExpressionSubMenu.transform.SetParent(menuRootObject.transform);
 
-            var facialTrackingModeSubMenu = CreateFacialTrackingModeSubMenu();
-            facialTrackingModeSubMenu.transform.SetParent(menuRootObject.transform);
-
             var configSubMenu = CreateConfigSubMenu(fec);
             configSubMenu.transform.SetParent(menuRootObject.transform);
         }
@@ -100,22 +97,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return go;
         }
 
-        private GameObject CreateFacialTrackingModeSubMenu()
-        {
-            var subMenu = CreateSubMenu("顔トラッキングモード設定", null);
-
-            var inactiveToggle = CreateFacialTrackingInactiveToggle();
-            inactiveToggle.transform.SetParent(subMenu.transform);
-
-            var builtInFacialTrackingToggle = CreateBuiltInFacialTrackingToggle();
-            builtInFacialTrackingToggle.transform.SetParent(subMenu.transform);
-
-            var animatorBasedFacialTrackingToggle = CreateAnimatorBasedFacialTrackingToggle();
-            animatorBasedFacialTrackingToggle.transform.SetParent(subMenu.transform);
-
-            return subMenu;
-        }
-
         private GameObject CreateConfigSubMenu(FacialExpressionControl fec)
         {
             var subMenu = CreateSubMenu("Config", null);
@@ -136,66 +117,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             selectGesturePresetSubMenu.transform.SetParent(subMenu.transform);
 
             return subMenu;
-        }
-
-        private GameObject CreateFacialTrackingInactiveToggle()
-        {
-            var go = new GameObject("顔トラッキング無効");
-
-            var maMenuItem = go.AddComponent<ModularAvatarMenuItem>();
-            var control = new VRCExpressionsMenu.Control()
-            {
-                type = VRCExpressionsMenu.Control.ControlType.Toggle,
-                parameter = new VRCExpressionsMenu.Control.Parameter()
-                {
-                    name = InternalParameters.FacialTrackingMode.name,
-                },
-                value = FacialTrackingType.Inactive,
-            };
-
-            maMenuItem.Control = control;
-
-            return go;
-        }
-
-        private GameObject CreateBuiltInFacialTrackingToggle()
-        {
-            var go = new GameObject("ビルトイン");
-
-            var maMenuItem = go.AddComponent<ModularAvatarMenuItem>();
-            var control = new VRCExpressionsMenu.Control()
-            {
-                type = VRCExpressionsMenu.Control.ControlType.Toggle,
-                parameter = new VRCExpressionsMenu.Control.Parameter()
-                {
-                    name = InternalParameters.FacialTrackingMode.name,
-                },
-                value = FacialTrackingType.BuiltInFacialTracking,
-            };
-
-            maMenuItem.Control = control;
-
-            return go;
-        }
-
-        private GameObject CreateAnimatorBasedFacialTrackingToggle()
-        {
-            var go = new GameObject("アニメーションベース");
-
-            var maMenuItem = go.AddComponent<ModularAvatarMenuItem>();
-            var control = new VRCExpressionsMenu.Control()
-            {
-                type = VRCExpressionsMenu.Control.ControlType.Toggle,
-                parameter = new VRCExpressionsMenu.Control.Parameter()
-                {
-                    name = InternalParameters.FacialTrackingMode.name,
-                },
-                value = FacialTrackingType.AnimatorBasedFacialTracking,
-            };
-
-            maMenuItem.Control = control;
-
-            return go;
         }
 
         private GameObject CreateContactLockOnToggle()
