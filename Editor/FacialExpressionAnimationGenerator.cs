@@ -176,11 +176,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             if (smr == null)
             {
-                smr = avatarRootObject.GetComponentInChildren<SkinnedMeshRenderer>();
-            }
-
-            if (smr == null)
-            {
                 Debug.LogWarning($"[FacialExpressionController] SkinnedMeshRenderer が見つかりませんでした: {avatarRootObject.name}");
                 return null;
             }
@@ -209,7 +204,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 name = animationClipName,
             };
 
-            var objectPath = MiscUtil.GetPathInHierarchy(body.gameObject, avatarRootObject);
+            var objectPath = MiscUtil.GetPathInHierarchy(smr.gameObject, avatarRootObject);
 
             foreach (var (blendShapeName, blendShapeWeight) in blendShapes)
             {
