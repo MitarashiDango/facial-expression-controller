@@ -265,6 +265,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
                 foreach (var index in ad.customEyeLookSettings.eyelidsBlendshapes)
                 {
+                    if (index < 0 || index >= mesh.blendShapeCount)
+                    {
+                        continue;
+                    }
+
                     var blendShapeName = mesh.GetBlendShapeName(index);
 
                     if (!string.IsNullOrEmpty(blendShapeName))
