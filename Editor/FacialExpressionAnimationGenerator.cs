@@ -185,10 +185,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return null;
             }
 
-            if (excludeBlendShapes == null)
-            {
-                excludeBlendShapes = new List<string>();
-            }
+            excludeBlendShapes = excludeBlendShapes != null
+                ? new List<string>(excludeBlendShapes)
+                : new List<string>();
 
             // メッシュに影響を及ぼしていないブレンドシェイプ(Splitterなどの用途で定義されているブレンドシェイプなど)は除外対象とする
             excludeBlendShapes.AddRange(BlendShapeUtil.FindEmptyBlendShapes(smr));
