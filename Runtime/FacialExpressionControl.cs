@@ -24,9 +24,9 @@ namespace MitarashiDango.FacialExpressionController.Runtime
         /// </summary>
         public float transitionTime = 0.1f;
 
-        public List<FacialExpressionGesturePreset> facialExpressionGesturePresets;
+        public List<FacialExpressionGesturePreset> facialExpressionGesturePresets = new List<FacialExpressionGesturePreset>();
 
-        public List<FacialExpressionGroup> facialExpressionGroups;
+        public List<FacialExpressionGroup> facialExpressionGroups = new List<FacialExpressionGroup>();
 
         /// <summary>
         /// AFKモードを使用するかどうか (true: する, false: しない)

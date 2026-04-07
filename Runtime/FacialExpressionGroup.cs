@@ -8,6 +8,6 @@ namespace MitarashiDango.FacialExpressionController.Runtime
     {
         public string groupName;
 
-        public List<FacialExpression> facialExpressions;
+        public List<FacialExpression> facialExpressions = new List<FacialExpression>();
     }
 }
