@@ -172,21 +172,17 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var body = avatarRootObject.transform.Find("Body");
-            if (body == null)
-            {
-                return null;
-            }
+            var smr = body != null ? body.GetComponent<SkinnedMeshRenderer>() : null;
 
-            var smr = body.GetComponent<SkinnedMeshRenderer>();
             if (smr == null)
             {
+                Debug.LogWarning($"[FacialExpressionController] SkinnedMeshRenderer が見つかりませんでした: {avatarRootObject.name}");
                 return null;
             }
 
-            if (excludeBlendShapes == null)
-            {
-                excludeBlendShapes = new List<string>();
-            }
+            excludeBlendShapes = excludeBlendShapes != null
+                ? new List<string>(excludeBlendShapes)
+                : new List<string>();
 
             // メッシュに影響を及ぼしていないブレンドシェイプ(Splitterなどの用途で定義されているブレンドシェイプなど)は除外対象とする
             excludeBlendShapes.AddRange(BlendShapeUtil.FindEmptyBlendShapes(smr));
@@ -208,7 +204,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 name = animationClipName,
             };
 
-            var objectPath = MiscUtil.GetPathInHierarchy(body.gameObject, avatarRootObject);
+            var objectPath = MiscUtil.GetPathInHierarchy(smr.gameObject, avatarRootObject);
 
             foreach (var (blendShapeName, blendShapeWeight) in blendShapes)
             {

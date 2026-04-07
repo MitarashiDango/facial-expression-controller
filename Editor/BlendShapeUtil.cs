@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace MitarashiDango.FacialExpressionController.Editor
@@ -21,16 +22,15 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return blendShapes;
             }
 
-            if (excludeBlendShapes == null)
-            {
-                excludeBlendShapes = new List<string>();
-            }
+            var excludeSet = excludeBlendShapes != null
+                ? new HashSet<string>(excludeBlendShapes)
+                : new HashSet<string>();
 
             for (var i = 0; i < mesh.blendShapeCount; i++)
             {
                 var blendShapeName = mesh.GetBlendShapeName(i);
 
-                if (excludeBlendShapes.Exists(name => name == blendShapeName))
+                if (excludeSet.Contains(blendShapeName))
                 {
                     continue;
                 }

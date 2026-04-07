@@ -135,11 +135,9 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AddSimpleModeTransition(layer.stateMachine, afkState, FacialExpressionControlModeType.AFKMode);
 
             var gestureFacialExpressions = _fec.facialExpressionGesturePresets
-                .SelectMany(x => new List<FacialExpression>
-                {
-                    x.fist, x.handOpen, x.fingerPoint, x.victory,
-                    x.rockNRoll, x.handGun, x.thumbsUp
-                })
+                .SelectMany(x => x != null
+                    ? new List<FacialExpression> { x.fist, x.handOpen, x.fingerPoint, x.victory, x.rockNRoll, x.handGun, x.thumbsUp }
+                    : new List<FacialExpression> { null, null, null, null, null, null, null })
                 .Select((v, i) => new { v, i })
                 .GroupBy(x => x.i / 10)
                 .Select(g => g.Select(x => x.v).ToList())
@@ -327,7 +325,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         private AnimatorState CreateFacialExpressionState(AnimatorStateMachine stateMachine, string stateName, FacialExpression facialExpression, string motionTimeParameterName, Vector3 position)
         {
             var state = stateMachine.AddState(stateName, position);
-            state.speed = 1 / _fec.transitionTime;
+            state.speed = _fec.transitionTime > 0 ? 1f / _fec.transitionTime : 0f;
             state.writeDefaultValues = false;
             state.motion = facialExpression?.motion != null ? facialExpression.motion : blankAnimationClip;
 

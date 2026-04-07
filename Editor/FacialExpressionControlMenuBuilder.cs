@@ -275,7 +275,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             var subMenu = CreateSubMenu("左手", null);
 
-            foreach (var (gesturePreset, i) in fec.facialExpressionGesturePresets.Select((v, i) => (v, i)))
+            foreach (var (gesturePreset, i) in fec.facialExpressionGesturePresets.Select((v, i) => (v, i)).Where(x => x.v != null))
             {
                 var go = CreateSelectGesturePresetToggle(gesturePreset, i, InternalParameters.SelectedLeftGesturePreset.name);
                 go.transform.SetParent(subMenu.transform);
@@ -288,7 +288,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             var subMenu = CreateSubMenu("右手", null);
 
-            foreach (var (gesturePreset, i) in fec.facialExpressionGesturePresets.Select((v, i) => (v, i)))
+            foreach (var (gesturePreset, i) in fec.facialExpressionGesturePresets.Select((v, i) => (v, i)).Where(x => x.v != null))
             {
                 var go = CreateSelectGesturePresetToggle(gesturePreset, i, InternalParameters.SelectedRightGesturePreset.name);
                 go.transform.SetParent(subMenu.transform);

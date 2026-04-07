@@ -73,6 +73,11 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             for (var i = 0; i < _fec.facialExpressionGesturePresets.Count; i++)
             {
                 var gesturePreset = _fec.facialExpressionGesturePresets[i];
+                if (gesturePreset == null)
+                {
+                    continue;
+                }
+
                 var presetName = string.IsNullOrEmpty(gesturePreset.presetName) ? i.ToString() : gesturePreset.presetName;
 
                 var gesturePresetStateMachine = layer.stateMachine.AddStateMachine($"Gesture Preset ({presetName})", new Vector3(300, i * 80, 0));
