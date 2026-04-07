@@ -327,7 +327,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         private AnimatorState CreateFacialExpressionState(AnimatorStateMachine stateMachine, string stateName, FacialExpression facialExpression, string motionTimeParameterName, Vector3 position)
         {
             var state = stateMachine.AddState(stateName, position);
-            state.speed = 1 / _fec.transitionTime;
+            state.speed = _fec.transitionTime > 0 ? 1f / _fec.transitionTime : 0f;
             state.writeDefaultValues = false;
             state.motion = facialExpression?.motion != null ? facialExpression.motion : blankAnimationClip;
 
