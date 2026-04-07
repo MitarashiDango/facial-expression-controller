@@ -37,11 +37,11 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 CreateVRCAnimatorTrackingControl(VRC_AnimatorTrackingControl.TrackingType.Animation, VRC_AnimatorTrackingControl.TrackingType.Animation)
             };
 
-            var afkState = layer.stateMachine.AddState("AFK", new Vector3(500, 320, 0));
+            var afkState = layer.stateMachine.AddState("AFK", new Vector3(500, 160, 0));
             afkState.writeDefaultValues = false;
             afkState.motion = blankAnimationClip;
 
-            var neutralState = layer.stateMachine.AddState("Neutral", new Vector3(500, 400, 0));
+            var neutralState = layer.stateMachine.AddState("Neutral", new Vector3(500, 240, 0));
             neutralState.writeDefaultValues = false;
             neutralState.motion = blankAnimationClip; // MEMO まばたき等をアニメーションで表現する場合、ここで設定する (設定する場合、目と口のトラッキングタイプを Animation にする)
             neutralState.behaviours = new StateMachineBehaviour[]
@@ -49,13 +49,13 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 CreateVRCAnimatorTrackingControl(VRC_AnimatorTrackingControl.TrackingType.Tracking, VRC_AnimatorTrackingControl.TrackingType.Tracking)
             };
 
-            var gestureFacialExpressionsStateMachine = layer.stateMachine.AddStateMachine("Facial Expressions (Gesture)", new Vector3(500, 480, 0));
+            var gestureFacialExpressionsStateMachine = layer.stateMachine.AddStateMachine("Facial Expressions (Gesture)", new Vector3(500, 320, 0));
             gestureFacialExpressionsStateMachine.entryPosition = new Vector3(0, 0, 0);
             gestureFacialExpressionsStateMachine.exitPosition = new Vector3(1000, 0, 0);
             gestureFacialExpressionsStateMachine.anyStatePosition = new Vector3(0, -80, 0);
             gestureFacialExpressionsStateMachine.parentStateMachinePosition = new Vector3(1000, 320, 0);
 
-            var selectedFacialExpressionsStateMachine = layer.stateMachine.AddStateMachine("Facial Expressions (Selected)", new Vector3(500, 560, 0));
+            var selectedFacialExpressionsStateMachine = layer.stateMachine.AddStateMachine("Facial Expressions (Selected)", new Vector3(500, 400, 0));
             selectedFacialExpressionsStateMachine.entryPosition = new Vector3(0, 0, 0);
             selectedFacialExpressionsStateMachine.exitPosition = new Vector3(1000, 0, 0);
             selectedFacialExpressionsStateMachine.anyStatePosition = new Vector3(0, -80, 0);
