@@ -29,23 +29,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             inactiveState.writeDefaultValues = false;
             inactiveState.motion = blankAnimationClip;
 
-            var builtInFacialTrackingState = layer.stateMachine.AddState("Built-in Facial Tracking", new Vector3(500, 80, 0));
-            builtInFacialTrackingState.writeDefaultValues = false;
-            builtInFacialTrackingState.motion = blankAnimationClip;
-            builtInFacialTrackingState.behaviours = new StateMachineBehaviour[]
-            {
-                CreateVRCAnimatorTrackingControl(VRC_AnimatorTrackingControl.TrackingType.Tracking, VRC_AnimatorTrackingControl.TrackingType.Tracking)
-            };
-
-            var animatorBasedFacialTrackingState = layer.stateMachine.AddState("Animator Based Facial Tracking", new Vector3(500, 160, 0));
-            animatorBasedFacialTrackingState.writeDefaultValues = false;
-            animatorBasedFacialTrackingState.motion = blankAnimationClip;
-            animatorBasedFacialTrackingState.behaviours = new StateMachineBehaviour[]
-            {
-                CreateVRCAnimatorTrackingControl(VRC_AnimatorTrackingControl.TrackingType.Animation, VRC_AnimatorTrackingControl.TrackingType.Animation)
-            };
-
-            var danceModeState = layer.stateMachine.AddState("Dance Mode", new Vector3(500, 240, 0));
+            var danceModeState = layer.stateMachine.AddState("Dance Mode", new Vector3(500, 80, 0));
             danceModeState.writeDefaultValues = false;
             danceModeState.motion = blankAnimationClip;
             danceModeState.behaviours = new StateMachineBehaviour[]
@@ -103,8 +87,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             var immediateModes = new[]
             {
-                FacialExpressionControlModeType.BuiltInFacialTracking,
-                FacialExpressionControlModeType.AnimatorBasedFacialTracking,
                 FacialExpressionControlModeType.DanceMode,
                 FacialExpressionControlModeType.AFKMode
             };
@@ -128,9 +110,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             AnimatorTransitionUtil.AddExitTransition(selectedFacialExpressionsStateMachine, layer.stateMachine);
 
-            // 個別ステート（トラッキングモードやダンスモード）へのトランジション
-            AddSimpleModeTransition(layer.stateMachine, builtInFacialTrackingState, FacialExpressionControlModeType.BuiltInFacialTracking);
-            AddSimpleModeTransition(layer.stateMachine, animatorBasedFacialTrackingState, FacialExpressionControlModeType.AnimatorBasedFacialTracking);
+            // 個別ステート（ダンスモード等）へのトランジション
             AddSimpleModeTransition(layer.stateMachine, danceModeState, FacialExpressionControlModeType.DanceMode);
             AddSimpleModeTransition(layer.stateMachine, afkState, FacialExpressionControlModeType.AFKMode);
 
@@ -297,11 +277,9 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                     .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.SelectedFacialExpressionInMenu)
                     .Exec(SetCrossFadeStateTransitionSettings);
 
-                // その他（BuiltIn, AnimatorBased, Dance, AFK）
+                // その他（Dance, AFK）
                 var immediateModes = new[]
                 {
-                    FacialExpressionControlModeType.BuiltInFacialTracking,
-                    FacialExpressionControlModeType.AnimatorBasedFacialTracking,
                     FacialExpressionControlModeType.DanceMode,
                     FacialExpressionControlModeType.AFKMode
                 };

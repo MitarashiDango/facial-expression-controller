@@ -45,21 +45,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
         };
 
         /// <summary>
-        /// フェイシャルトラッキングモード設定<br />
-        /// 乗り物モードがアクティブになった場合、以下の状態となる<br />
-        /// - 表情が一時的に固定される<br />
-        /// - 表情ロック用のContact Receiverが一時的に無効化される
-        /// </summary>
-        public static readonly Parameter FacialTrackingMode = new Parameter
-        {
-            name = "FEC/Internal/FacialTrackingMode",
-            parameterType = UnityEngine.AnimatorControllerParameterType.Int,
-            defaultInt = FacialTrackingType.Inactive,
-            localOnly = true,
-            saved = true,
-        };
-
-        /// <summary>
         /// 表情ロックが有効かどうか (true: ロック有効, false: ロック無効)<br />
         /// </summary>
         public static readonly Parameter FacialExpressionLocked = new Parameter

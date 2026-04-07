@@ -82,7 +82,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 InternalParameters.FacialExpressionControlON,
                 InternalParameters.SwitchToDanceModeON,
                 InternalParameters.SwitchToVehicleModeON,
-                InternalParameters.FacialTrackingMode,
                 InternalParameters.FacialExpressionLocked,
                 InternalParameters.SelectedLeftGesturePreset,
                 InternalParameters.SelectedRightGesturePreset,
