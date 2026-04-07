@@ -172,14 +172,16 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var body = avatarRootObject.transform.Find("Body");
-            if (body == null)
-            {
-                return null;
-            }
+            var smr = body != null ? body.GetComponent<SkinnedMeshRenderer>() : null;
 
-            var smr = body.GetComponent<SkinnedMeshRenderer>();
             if (smr == null)
             {
+                smr = avatarRootObject.GetComponentInChildren<SkinnedMeshRenderer>();
+            }
+
+            if (smr == null)
+            {
+                Debug.LogWarning($"[FacialExpressionController] SkinnedMeshRenderer が見つかりませんでした: {avatarRootObject.name}");
                 return null;
             }
 
