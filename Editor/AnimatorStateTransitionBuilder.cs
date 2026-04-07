@@ -1,93 +1,11 @@
-using System;
 using UnityEditor.Animations;
 
 namespace MitarashiDango.FacialExpressionController.Editor
 {
-    public class AnimatorStateTransitionBuilder
+    public class AnimatorStateTransitionBuilder : TransitionBuilderBase<AnimatorStateTransitionBuilder, AnimatorStateTransition>
     {
-        public AnimatorStateTransition Transition { get; private set; }
-
-        public AnimatorStateTransitionBuilder(AnimatorStateTransition transition)
+        public AnimatorStateTransitionBuilder(AnimatorStateTransition transition) : base(transition)
         {
-            Transition = transition;
-        }
-
-        public AnimatorStateTransitionBuilder If(string parameter)
-        {
-            Transition.AddCondition(AnimatorConditionMode.If, 0, parameter);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder If(Parameter parameter)
-        {
-            Transition.AddCondition(AnimatorConditionMode.If, 0, parameter.name);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder IfNot(string parameter)
-        {
-            Transition.AddCondition(AnimatorConditionMode.IfNot, 0, parameter);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder IfNot(Parameter parameter)
-        {
-            Transition.AddCondition(AnimatorConditionMode.IfNot, 0, parameter.name);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder Greater(string parameter, float value)
-        {
-            Transition.AddCondition(AnimatorConditionMode.Greater, value, parameter);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder Greater(Parameter parameter, float value)
-        {
-            Transition.AddCondition(AnimatorConditionMode.Greater, value, parameter.name);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder Less(string parameter, float value)
-        {
-            Transition.AddCondition(AnimatorConditionMode.Less, value, parameter);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder Less(Parameter parameter, float value)
-        {
-            Transition.AddCondition(AnimatorConditionMode.Less, value, parameter.name);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder Equals(string parameter, float value)
-        {
-            Transition.AddCondition(AnimatorConditionMode.Equals, value, parameter);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder Equals(Parameter parameter, float value)
-        {
-            Transition.AddCondition(AnimatorConditionMode.Equals, value, parameter.name);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder NotEqual(string parameter, float value)
-        {
-            Transition.AddCondition(AnimatorConditionMode.NotEqual, value, parameter);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder NotEqual(Parameter parameter, float value)
-        {
-            Transition.AddCondition(AnimatorConditionMode.NotEqual, value, parameter.name);
-            return this;
-        }
-
-        public AnimatorStateTransitionBuilder Exec(Action<AnimatorStateTransitionBuilder> func)
-        {
-            func(this);
-            return this;
         }
 
         public void SetImmediateTransitionSettings()
