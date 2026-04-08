@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace MitarashiDango.FacialExpressionController.Runtime
 {
-    public enum AFKExitWaitMode
+    public enum AFKExitMotionWaitMode
     {
         [InspectorName("待機なし")]
         None,
@@ -10,8 +10,7 @@ namespace MitarashiDango.FacialExpressionController.Runtime
         [InspectorName("指定時間待機")]
         Duration,
 
-        // TODO そのうち実装する
-        //[InspectorName("パラメーターによる制御")]
-        //Parameter,
+        [InspectorName("パラメーターによる制御")]
+        Parameter,
     }
 }
