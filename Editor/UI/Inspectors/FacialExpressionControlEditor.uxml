@@ -14,6 +14,11 @@
             <ui:ListView virtualization-method="DynamicHeight" show-border="true" show-foldout-header="true" show-add-remove-footer="true" reorder-mode="Animated" header-title="表情グループ" binding-path="facialExpressionGroups" />
         </ui:VisualElement>
     </ui:Foldout>
+    <ui:Foldout text="表情ロック設定" value="true" class="section-foldout">
+        <ui:VisualElement class="section-content">
+            <uie:PropertyField label="表情ロック用Contact Receiver" binding-path="facialExpressionLockContactReceiver" name="facial-expression-lock-contact-receiver" />
+        </ui:VisualElement>
+    </ui:Foldout>
     <ui:Foldout text="AFK設定" value="true" class="section-foldout">
         <ui:VisualElement class="section-content">
             <uie:PropertyField label="AFKモードを使用する" binding-path="useAFKMode" name="use-afk-mode" />
