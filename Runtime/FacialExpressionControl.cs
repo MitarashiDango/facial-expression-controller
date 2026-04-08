@@ -34,12 +34,12 @@ namespace MitarashiDango.FacialExpressionController.Runtime
         public bool useAFKMode = true;
 
         /// <summary>
-        /// AFK終了後の待機モード
+        /// AFK終了後の待機モード (AFKモードを使用する場合のみ有効)
         /// </summary>
         public AFKExitWaitMode afkExitWaitMode = AFKExitWaitMode.None;
 
         /// <summary>
-        /// 待機時間
+        /// AFK待機時間 (AFK待機モードが指定時間待機の場合のみ有効)
         /// </summary>
         public float waitAFKExitDurationTime = 0;
     }
