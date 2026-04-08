@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using VRC.SDK3.Dynamics.Contact.Components;
 using VRC.SDKBase;
 
 namespace MitarashiDango.FacialExpressionController.Runtime
@@ -27,6 +28,11 @@ namespace MitarashiDango.FacialExpressionController.Runtime
         public List<FacialExpressionGesturePreset> facialExpressionGesturePresets = new List<FacialExpressionGesturePreset>();
 
         public List<FacialExpressionGroup> facialExpressionGroups = new List<FacialExpressionGroup>();
+
+        /// <summary>
+        /// 表情ロック用のContact Receiver
+        /// </summary>
+        public VRCContactReceiver facialExpressionLockContactReceiver;
 
         /// <summary>
         /// AFKモードを使用するかどうか (true: する, false: しない)

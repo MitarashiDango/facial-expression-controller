@@ -31,6 +31,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             CreateMAParameters(fec);
             CreateAnimatorControllerProcess(ctx, fec);
+            SetupContactReceiver(fec);
 
             var fecMenus = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControlMenu>();
             foreach (var fecMenu in fecMenus)
@@ -70,6 +71,16 @@ namespace MitarashiDango.FacialExpressionController.Editor
             if (fec.defaultFace != null || fec.generateDefaultFacialAnimation)
             {
                 CreateDefaultFacialExpressionAnimatorController(ctx, fec);
+            }
+        }
+
+        private void SetupContactReceiver(FacialExpressionControl fec)
+        {
+            var contactReceiver = fec.facialExpressionLockContactReceiver;
+            if (contactReceiver != null)
+            {
+                contactReceiver.parameter = InternalParameters.FacialExpressionLockReceiverInContact.name;
+                contactReceiver.receiverType = VRC.Dynamics.ContactReceiver.ReceiverType.Constant;
             }
         }
 
