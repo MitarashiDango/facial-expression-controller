@@ -1,3 +1,4 @@
+using System.Linq;
 using MitarashiDango.FacialExpressionController.Runtime;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -65,19 +66,55 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             var switchToAFKInactiveTransition = AnimatorTransitionUtil.AddTransition(switchToAFKInactiveState, afkInactiveState)
                 .IfNot(VRCParameters.AFK);
 
-            if (_fec.afkExitWaitMode == AFKExitWaitMode.Duration && _fec.waitAFKExitDurationTime > 0)
+            if (_fec.afkExitMotionWaitMode == AFKExitMotionWaitMode.Duration && _fec.afkExitMotionWaitDuration > 0)
             {
                 switchToAFKInactiveTransition.Exec((builder) =>
                 {
                     var transition = builder.Transition;
                     transition.hasExitTime = true;
-                    transition.exitTime = _fec.waitAFKExitDurationTime;
+                    transition.exitTime = _fec.afkExitMotionWaitDuration;
                     transition.hasFixedDuration = true;
                     transition.duration = 0;
                     transition.offset = 0;
                     transition.interruptionSource = TransitionInterruptionSource.None;
                     transition.orderedInterruption = true;
                 });
+            }
+            else if (_fec.afkExitMotionWaitMode == AFKExitMotionWaitMode.Parameter
+                && _fec.afkExitMotionWaitParameterConditions != null
+                && HasValidParameterConditions())
+            {
+                foreach (var condition in _fec.afkExitMotionWaitParameterConditions)
+                {
+                    if (condition == null || string.IsNullOrEmpty(condition.parameterName))
+                    {
+                        continue;
+                    }
+
+                    switch (condition.compareMode)
+                    {
+                        case AnimatorConditionCompareMode.If:
+                            switchToAFKInactiveTransition.If(condition.parameterName);
+                            break;
+                        case AnimatorConditionCompareMode.IfNot:
+                            switchToAFKInactiveTransition.IfNot(condition.parameterName);
+                            break;
+                        case AnimatorConditionCompareMode.Greater:
+                            switchToAFKInactiveTransition.Greater(condition.parameterName, condition.threshold);
+                            break;
+                        case AnimatorConditionCompareMode.Less:
+                            switchToAFKInactiveTransition.Less(condition.parameterName, condition.threshold);
+                            break;
+                        case AnimatorConditionCompareMode.Equals:
+                            switchToAFKInactiveTransition.Equals(condition.parameterName, condition.threshold);
+                            break;
+                        case AnimatorConditionCompareMode.NotEqual:
+                            switchToAFKInactiveTransition.NotEqual(condition.parameterName, condition.threshold);
+                            break;
+                    }
+                }
+
+                switchToAFKInactiveTransition.SetImmediateTransitionSettings();
             }
             else
             {
@@ -89,6 +126,12 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 .SetImmediateTransitionSettings();
 
             return layer;
+        }
+
+        private bool HasValidParameterConditions()
+        {
+            return _fec.afkExitMotionWaitParameterConditions
+                .Any(c => c != null && !string.IsNullOrEmpty(c.parameterName));
         }
     }
 }

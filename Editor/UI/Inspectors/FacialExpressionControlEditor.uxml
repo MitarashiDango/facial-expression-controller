@@ -22,8 +22,9 @@
     <ui:Foldout text="AFK設定" value="true" class="section-foldout">
         <ui:VisualElement class="section-content">
             <uie:PropertyField label="AFKモードを使用する" binding-path="useAFKMode" name="use-afk-mode" />
-            <uie:PropertyField label="AFK終了待機時の挙動" type="MitarashiDango.FacialExpressionController.Runtime.AFKExitWaitMode, com.matcha-soft.facial-expression-controller.runtime" binding-path="afkExitWaitMode" name="afk-exit-wait-mode" />
-            <uie:PropertyField label="AFK終了後の待機時間" binding-path="waitAFKExitDurationTime" name="wait-afk-exit-duration-time" />
+            <uie:PropertyField label="AFK終了モーション待機方法" type="MitarashiDango.FacialExpressionController.Runtime.AFKExitMotionWaitMode, com.matcha-soft.facial-expression-controller.runtime" binding-path="afkExitMotionWaitMode" name="afk-exit-motion-wait-mode" />
+            <uie:PropertyField label="AFK終了モーション待機時間" binding-path="afkExitMotionWaitDuration" name="afk-exit-motion-wait-duration" />
+            <ui:ListView show-border="true" virtualization-method="DynamicHeight" show-foldout-header="true" show-add-remove-footer="true" reorder-mode="Animated" header-title="パラメーター条件" binding-path="afkExitMotionWaitParameterConditions" name="afk-exit-motion-wait-parameter-conditions" />
         </ui:VisualElement>
     </ui:Foldout>
 </ui:UXML>
