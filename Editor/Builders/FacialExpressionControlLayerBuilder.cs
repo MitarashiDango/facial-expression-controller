@@ -119,27 +119,28 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                     ? new List<FacialExpression> { x.fist, x.handOpen, x.fingerPoint, x.victory, x.rockNRoll, x.handGun, x.thumbsUp }
                     : new List<FacialExpression> { null, null, null, null, null, null, null })
                 .Select((v, i) => new { v, i })
-                .GroupBy(x => x.i / 10)
+                .GroupBy(x => x.i / FacialExpressionNumbering.StateGroupSize)
                 .Select(g => g.Select(x => x.v).ToList())
                 .ToList();
 
             for (var i = 0; i < gestureFacialExpressions.Count; i++)
             {
-                var stateMachine = gestureFacialExpressionsStateMachine.AddStateMachine($"Facial Expression Gesture Preset ({i * 10 + 1} ~ {i * 10 + gestureFacialExpressions[i].Count})", new Vector3(500, 80 * i, 0));
+                var groupBaseNumber = i * FacialExpressionNumbering.StateGroupSize;
+                var stateMachine = gestureFacialExpressionsStateMachine.AddStateMachine($"Facial Expression Gesture Preset ({groupBaseNumber + 1} ~ {groupBaseNumber + gestureFacialExpressions[i].Count})", new Vector3(500, 80 * i, 0));
                 stateMachine.entryPosition = new Vector3(0, 0, 0);
                 stateMachine.exitPosition = new Vector3(1000, 0, 0);
                 stateMachine.anyStatePosition = new Vector3(0, -80, 0);
                 stateMachine.parentStateMachinePosition = new Vector3(1000, 320, 0);
 
                 AnimatorTransitionUtil.AddEntryTransition(gestureFacialExpressionsStateMachine, stateMachine)
-                    .Greater(SyncParameters.CurrentFacialExpressionNumber, i * 10)
-                    .Less(SyncParameters.CurrentFacialExpressionNumber, i * 10 + gestureFacialExpressions[i].Count + 1);
+                    .Greater(SyncParameters.CurrentFacialExpressionNumber, groupBaseNumber)
+                    .Less(SyncParameters.CurrentFacialExpressionNumber, groupBaseNumber + gestureFacialExpressions[i].Count + 1);
 
                 AnimatorTransitionUtil.AddExitTransition(stateMachine, gestureFacialExpressionsStateMachine);
 
                 for (var j = 0; j < gestureFacialExpressions[i].Count; j++)
                 {
-                    var facialExpressionNumber = i * 10 + j + 1;
+                    var facialExpressionNumber = groupBaseNumber + j + 1;
                     var childStateMachine = CreateGestureFacialExpressionSubStateMachine(stateMachine, gestureFacialExpressions[i][j], facialExpressionNumber, new Vector3(500, 80 * j, 0));
 
                     AnimatorTransitionUtil.AddEntryTransition(stateMachine, childStateMachine)
@@ -152,27 +153,28 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             var selectedFacialExpressions = _fec.facialExpressionGroups
                 .SelectMany(x => x.facialExpressions)
                 .Select((v, i) => new { v, i })
-                .GroupBy(x => x.i / 10)
+                .GroupBy(x => x.i / FacialExpressionNumbering.StateGroupSize)
                 .Select(g => g.Select(x => x.v).ToList())
                 .ToList();
 
             for (var i = 0; i < selectedFacialExpressions.Count; i++)
             {
-                var stateMachine = selectedFacialExpressionsStateMachine.AddStateMachine($"Selected Facial Expression Group ({i * 10 + 1} ~ {i * 10 + selectedFacialExpressions[i].Count})", new Vector3(500, 80 * i, 0));
+                var groupBaseNumber = i * FacialExpressionNumbering.StateGroupSize;
+                var stateMachine = selectedFacialExpressionsStateMachine.AddStateMachine($"Selected Facial Expression Group ({groupBaseNumber + 1} ~ {groupBaseNumber + selectedFacialExpressions[i].Count})", new Vector3(500, 80 * i, 0));
                 stateMachine.entryPosition = new Vector3(0, 0, 0);
                 stateMachine.exitPosition = new Vector3(1000, 0, 0);
                 stateMachine.anyStatePosition = new Vector3(0, -80, 0);
                 stateMachine.parentStateMachinePosition = new Vector3(1000, 320, 0);
 
                 AnimatorTransitionUtil.AddEntryTransition(selectedFacialExpressionsStateMachine, stateMachine)
-                    .Greater(SyncParameters.CurrentFacialExpressionNumber, i * 10)
-                    .Less(SyncParameters.CurrentFacialExpressionNumber, i * 10 + selectedFacialExpressions[i].Count + 1);
+                    .Greater(SyncParameters.CurrentFacialExpressionNumber, groupBaseNumber)
+                    .Less(SyncParameters.CurrentFacialExpressionNumber, groupBaseNumber + selectedFacialExpressions[i].Count + 1);
 
                 AnimatorTransitionUtil.AddExitTransition(stateMachine, selectedFacialExpressionsStateMachine);
 
                 for (var j = 0; j < selectedFacialExpressions[i].Count; j++)
                 {
-                    var facialExpressionNumber = i * 10 + j + 1;
+                    var facialExpressionNumber = groupBaseNumber + j + 1;
                     var state = CreateFacialExpressionState(stateMachine, $"Selected Facial Expression ({facialExpressionNumber})", selectedFacialExpressions[i][j], SyncParameters.FixedWeight, new Vector3(500, 80 * j, 0));
 
                     AnimatorTransitionUtil.AddEntryTransition(stateMachine, state)
