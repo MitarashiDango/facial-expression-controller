@@ -150,6 +150,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 {
                     var facialExpressionNumber = i * 10 + j + 1;
                     var selectedFacialExpressionState = selectedFacialExpressionGroupStateMachine.AddState($"Selected Facial Expression ({facialExpressionNumber})", new Vector3(300, 80 * j, 0));
+                    selectedFacialExpressionState.writeDefaultValues = false;
                     selectedFacialExpressionState.motion = blankAnimationClip;
                     selectedFacialExpressionState.behaviours = new StateMachineBehaviour[]
                     {

@@ -14,6 +14,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             layer.stateMachine.anyStatePosition = new Vector3(0, -80, 0);
 
             var initialState = layer.stateMachine.AddState("Initial State", new Vector3(200, 0, 0));
+            initialState.writeDefaultValues = false;
+            initialState.motion = blankAnimationClip;
 
             var inactiveState = layer.stateMachine.AddState("Vehicle Mode Inactive", new Vector3(500, 0, 0));
             inactiveState.writeDefaultValues = false;
