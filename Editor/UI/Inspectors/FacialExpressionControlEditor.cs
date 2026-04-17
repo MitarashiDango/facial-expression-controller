@@ -10,7 +10,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
     [CustomEditor(typeof(FacialExpressionControl))]
     public class FacialExpressionControlEditor : UnityEditor.Editor
     {
-        private static string _mainUxmlGuid = "276a4def4ec44c640b707bc26454c4c5";
+        private const string MainUxmlPath = "Packages/com.matcha-soft.facial-expression-controller/Editor/UI/Inspectors/FacialExpressionControlEditor.uxml";
 
         private VisualElement _defaultFaceField;
         private VisualElement _afkExitMotionWaitModeField;
@@ -20,10 +20,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         public override VisualElement CreateInspectorGUI()
         {
-            var mainUxmlAsset = MiscUtil.LoadVisualTreeAsset(_mainUxmlGuid);
+            var mainUxmlAsset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(MainUxmlPath);
             if (mainUxmlAsset == null)
             {
-                Debug.LogError($"Cannot load UXML file: {_mainUxmlGuid}");
+                Debug.LogError($"[FacialExpressionController] Cannot load UXML file: {MainUxmlPath}");
                 return null;
             }
 

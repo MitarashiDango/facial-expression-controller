@@ -13,9 +13,9 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         {
             var layer = CreateAnimatorControllerLayer("FEC_SELECT_FACIAL_EXPRESSION_CONTROL_MODE");
 
-            layer.stateMachine.entryPosition = new Vector3(0, 0, 0);
+            layer.stateMachine.entryPosition = AnimatorLayout.DefaultEntryPosition;
             layer.stateMachine.exitPosition = new Vector3(600, 440, 0);
-            layer.stateMachine.anyStatePosition = new Vector3(0, -80, 0);
+            layer.stateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
 
             var initialState = layer.stateMachine.AddState("Initial State", new Vector3(-20, 440, 0));
             initialState.writeDefaultValues = false;

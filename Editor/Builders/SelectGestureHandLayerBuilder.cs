@@ -13,7 +13,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         {
             var layer = CreateAnimatorControllerLayer("FEC_SELECT_GESTURE_HAND");
 
-            layer.stateMachine.entryPosition = new Vector3(0, 0, 0);
+            layer.stateMachine.entryPosition = AnimatorLayout.DefaultEntryPosition;
             layer.stateMachine.exitPosition = new Vector3(800, 120, 0);
             layer.stateMachine.anyStatePosition = new Vector3(0, -40, 0);
 
@@ -65,7 +65,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         {
             stateMachine.entryPosition = new Vector3(0, 160, 0);
             stateMachine.exitPosition = new Vector3(800, 160, 0);
-            stateMachine.anyStatePosition = new Vector3(0, -80, 0);
+            stateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
             stateMachine.parentStateMachinePosition = new Vector3(0, -200, 0);
 
             var initialState = stateMachine.AddState("Initial State (Neutral)", new Vector3(300, 160, 0));
@@ -79,13 +79,13 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             var leftHandStateMachine = stateMachine.AddStateMachine("Left Hand", new Vector3(500, 0, 0));
             leftHandStateMachine.entryPosition = new Vector3(0, 0, 0);
             leftHandStateMachine.exitPosition = new Vector3(800, 0, 0);
-            leftHandStateMachine.anyStatePosition = new Vector3(0, -80, 0);
+            leftHandStateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
             leftHandStateMachine.parentStateMachinePosition = new Vector3(800, 560, 0);
 
             var rightHandStateMachine = stateMachine.AddStateMachine("Right Hand", new Vector3(500, 320, 0));
             rightHandStateMachine.entryPosition = new Vector3(0, 0, 0);
             rightHandStateMachine.exitPosition = new Vector3(800, 0, 0);
-            rightHandStateMachine.anyStatePosition = new Vector3(0, -80, 0);
+            rightHandStateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
             rightHandStateMachine.parentStateMachinePosition = new Vector3(800, 560, 0);
 
             // Entry Transitions
@@ -122,8 +122,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AnimatorTransitionUtil.AddExitTransition(rightHandStateMachine, stateMachine)
                 .NotEqual(InternalParameters.GesturePriority, GesturePriorityType.LastWin);
 
-            int currentY = 0;
-            int spacingY = 80;
+            float currentY = 0;
+            float spacingY = AnimatorLayout.RowSpacing;
 
             // 0: Neutral用のステート生成
             var rightNeutralState = leftHandStateMachine.AddState("Neutral (Right Hand)", new Vector3(400, currentY, 0));
@@ -175,7 +175,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         {
             stateMachine.entryPosition = new Vector3(0, 160, 0);
             stateMachine.exitPosition = new Vector3(800, 160, 0);
-            stateMachine.anyStatePosition = new Vector3(0, -80, 0);
+            stateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
             stateMachine.parentStateMachinePosition = new Vector3(0, -200, 0);
 
             var neutralState = stateMachine.AddState("Neutral", new Vector3(300, 160, 0));
@@ -276,7 +276,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         {
             stateMachine.entryPosition = new Vector3(0, 160, 0);
             stateMachine.exitPosition = new Vector3(800, 160, 0);
-            stateMachine.anyStatePosition = new Vector3(0, -80, 0);
+            stateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
             stateMachine.parentStateMachinePosition = new Vector3(0, -200, 0);
 
             var neutralState = stateMachine.AddState("Neutral", new Vector3(300, 160, 0));
@@ -378,7 +378,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         {
             stateMachine.entryPosition = new Vector3(0, 160, 0);
             stateMachine.exitPosition = new Vector3(800, 160, 0);
-            stateMachine.anyStatePosition = new Vector3(0, -80, 0);
+            stateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
             stateMachine.parentStateMachinePosition = new Vector3(0, -200, 0);
 
             var neutralState = stateMachine.AddState("Neutral", new Vector3(300, 160, 0));

@@ -1,3 +1,4 @@
+using System.Linq;
 using MitarashiDango.FacialExpressionController.Editor;
 using MitarashiDango.FacialExpressionController.Runtime;
 using nadena.dev.modular_avatar.core;
@@ -22,8 +23,22 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void Processing(BuildContext ctx)
         {
-            var fec = ctx.AvatarRootObject.GetComponentInChildren<FacialExpressionControl>();
-            if (fec == null)
+            var fecs = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControl>(true);
+            if (fecs.Length == 0)
+            {
+                DestroyComponents(ctx);
+                return;
+            }
+
+            if (fecs.Length > 1)
+            {
+                var paths = string.Join(", ", fecs.Select(f => MiscUtil.GetPathInHierarchy(f.gameObject, ctx.AvatarRootObject)));
+                Debug.LogWarning($"[FacialExpressionController] Multiple FacialExpressionControl components were detected. Only the first one will be processed. Detected at: {paths}");
+            }
+
+            var fec = fecs[0];
+
+            if (!ValidateFacialExpressionCount(fec))
             {
                 DestroyComponents(ctx);
                 return;
@@ -33,13 +48,37 @@ namespace MitarashiDango.FacialExpressionController.Editor
             CreateAnimatorControllerProcess(ctx, fec);
             SetupContactReceiver(fec);
 
-            var fecMenus = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControlMenu>();
+            var fecMenus = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControlMenu>(true);
             foreach (var fecMenu in fecMenus)
             {
                 BuildMenuTree(fec, fecMenu);
             }
 
             DestroyComponents(ctx);
+        }
+
+        private bool ValidateFacialExpressionCount(FacialExpressionControl fec)
+        {
+            var gestureMaxNumber = fec.facialExpressionGesturePresets.Count * FacialExpressionNumbering.GestureCountPerPreset;
+            var menuMaxNumber = fec.facialExpressionGroups
+                .Where(g => g != null)
+                .Sum(g => g.facialExpressions != null ? g.facialExpressions.Count : 0);
+
+            var valid = true;
+
+            if (gestureMaxNumber > FacialExpressionNumbering.MaxNumber)
+            {
+                Debug.LogError($"[FacialExpressionController] Gesture preset capacity exceeds the limit. Limit: {FacialExpressionNumbering.MaxNumber}, Required: {gestureMaxNumber} ({fec.facialExpressionGesturePresets.Count} presets * {FacialExpressionNumbering.GestureCountPerPreset} gestures).");
+                valid = false;
+            }
+
+            if (menuMaxNumber > FacialExpressionNumbering.MaxNumber)
+            {
+                Debug.LogError($"[FacialExpressionController] Menu facial expression count exceeds the limit. Limit: {FacialExpressionNumbering.MaxNumber}, Required: {menuMaxNumber}.");
+                valid = false;
+            }
+
+            return valid;
         }
 
         private void DestroyComponents(BuildContext ctx)

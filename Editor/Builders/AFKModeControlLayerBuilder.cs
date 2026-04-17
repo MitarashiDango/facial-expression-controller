@@ -17,9 +17,9 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         public override AnimatorControllerLayer Build()
         {
             var layer = CreateAnimatorControllerLayer("FEC_AFK_MODE_CONTROL");
-            layer.stateMachine.entryPosition = new Vector3(0, 0, 0);
-            layer.stateMachine.exitPosition = new Vector3(0, -40, 0);
-            layer.stateMachine.anyStatePosition = new Vector3(0, -80, 0);
+            layer.stateMachine.entryPosition = AnimatorLayout.DefaultEntryPosition;
+            layer.stateMachine.exitPosition = AnimatorLayout.DefaultExitPosition;
+            layer.stateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
 
             var initialState = layer.stateMachine.AddState("Initial State", new Vector3(200, 0, 0));
             initialState.writeDefaultValues = false;

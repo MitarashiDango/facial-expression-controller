@@ -18,8 +18,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         public override AnimatorControllerLayer Build()
         {
             var layer = CreateAnimatorControllerLayer("FEC_DEFAULT_FACIAL_EXPRESSION", 1.0f);
-            layer.stateMachine.entryPosition = new Vector3(0, 0, 0);
-            layer.stateMachine.anyStatePosition = new Vector3(0, -80, 0);
+            layer.stateMachine.entryPosition = AnimatorLayout.DefaultEntryPosition;
+            layer.stateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
 
             var initialState = layer.stateMachine.AddState("Initial State", new Vector3(-20, 80, 0));
             initialState.writeDefaultValues = false;
@@ -57,7 +57,14 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             if (_fec.generateDefaultFacialAnimation)
             {
                 var feag = new FacialExpressionAnimationGenerator();
-                return feag.FromAvatar("Default Facial Expression (Auto Generated)", _avatarRootObject, null);
+                var generated = feag.FromAvatar("Default Facial Expression (Auto Generated)", _avatarRootObject, null);
+                if (generated != null)
+                {
+                    return generated;
+                }
+
+                Debug.LogWarning("[FacialExpressionController] Failed to auto-generate the default facial expression animation. Falling back to a blank animation clip.");
+                return blankAnimationClip;
             }
             return _fec.defaultFace != null ? _fec.defaultFace : blankAnimationClip;
         }

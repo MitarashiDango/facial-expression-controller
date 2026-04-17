@@ -42,7 +42,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             var layer = CreateAnimatorControllerLayer(layerName);
 
-            layer.stateMachine.entryPosition = new Vector3(0, 0, 0);
+            layer.stateMachine.entryPosition = AnimatorLayout.DefaultEntryPosition;
             layer.stateMachine.anyStatePosition = new Vector3(0, -40, 0);
             layer.stateMachine.exitPosition = new Vector3(800, 0, 0);
 
