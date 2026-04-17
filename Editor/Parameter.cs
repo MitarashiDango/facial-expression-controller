@@ -111,7 +111,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     pc.defaultValue = defaultFloat;
                     break;
                 case ParameterSyncType.Int:
-                    pc.defaultValue = (int)defaultFloat;
+                    pc.defaultValue = defaultInt;
                     break;
             }
 
