@@ -38,6 +38,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             var fec = fecs[0];
 
+            if (!ValidateFacialExpressionCount(fec))
+            {
+                DestroyComponents(ctx);
+                return;
+            }
+
             CreateMAParameters(fec);
             CreateAnimatorControllerProcess(ctx, fec);
             SetupContactReceiver(fec);
@@ -49,6 +55,30 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             DestroyComponents(ctx);
+        }
+
+        private bool ValidateFacialExpressionCount(FacialExpressionControl fec)
+        {
+            var gestureMaxNumber = fec.facialExpressionGesturePresets.Count * FacialExpressionNumbering.GestureCountPerPreset;
+            var menuMaxNumber = fec.facialExpressionGroups
+                .Where(g => g != null)
+                .Sum(g => g.facialExpressions != null ? g.facialExpressions.Count : 0);
+
+            var valid = true;
+
+            if (gestureMaxNumber > FacialExpressionNumbering.MaxNumber)
+            {
+                Debug.LogError($"[FacialExpressionController] Gesture preset capacity exceeds the limit. Limit: {FacialExpressionNumbering.MaxNumber}, Required: {gestureMaxNumber} ({fec.facialExpressionGesturePresets.Count} presets * {FacialExpressionNumbering.GestureCountPerPreset} gestures).");
+                valid = false;
+            }
+
+            if (menuMaxNumber > FacialExpressionNumbering.MaxNumber)
+            {
+                Debug.LogError($"[FacialExpressionController] Menu facial expression count exceeds the limit. Limit: {FacialExpressionNumbering.MaxNumber}, Required: {menuMaxNumber}.");
+                valid = false;
+            }
+
+            return valid;
         }
 
         private void DestroyComponents(BuildContext ctx)
