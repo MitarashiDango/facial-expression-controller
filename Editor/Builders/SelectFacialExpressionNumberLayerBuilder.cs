@@ -114,7 +114,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                     state.motion = blankAnimationClip;
                     state.behaviours = new StateMachineBehaviour[]
                     {
-                        CreateVRCAvatarParameterLocalSetDriver(SyncParameters.CurrentFacialExpressionNumber, i * 7 + gesture.Value),
+                        CreateVRCAvatarParameterLocalSetDriver(SyncParameters.CurrentFacialExpressionNumber, i * GestureConstants.Gestures.Length + gesture.Value),
                     };
 
                     AddGestureTransition(gesturePresetStateMachine, state, gesture.Value, i);
