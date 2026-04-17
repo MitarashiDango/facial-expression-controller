@@ -342,6 +342,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 value = facialExpressionNumber,
             };
 
+            if (facialExpression.menuIcon != null)
+            {
+                control.icon = facialExpression.menuIcon;
+            }
+
             maMenuItem.Control = control;
 
             return go;

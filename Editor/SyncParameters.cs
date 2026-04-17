@@ -9,18 +9,16 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// 現在の動作モード
         /// </summary>
         /// <value>
-        /// 取りうる値は以下の通り<br />
-        /// 0   = Facial expression control inactive<br />
-        /// 1   = Neutral<br />
-        /// 2   = Left hand gesture<br />
-        /// 3   = Left hand gesture (Fixed)<br />
-        /// 4   = Right hand gesture<br />
-        /// 5   = Right hand gesture (Fixed)<br />
-        /// 6   = Selected facial expression in menu<br />
-        /// 7   = Built-in Facial Tracking<br />
-        /// 8   = Animator Based Facial Tracking<br />
-        /// 9   = Dance Mode<br />
-        /// 10  = AFK Mode<br />
+        /// 取りうる値は <see cref="FacialExpressionControlModeType"/> を参照<br />
+        /// 0 = Facial expression control inactive<br />
+        /// 1 = Neutral<br />
+        /// 2 = Left hand gesture<br />
+        /// 3 = Left hand gesture (Fixed)<br />
+        /// 4 = Right hand gesture<br />
+        /// 5 = Right hand gesture (Fixed)<br />
+        /// 6 = Selected facial expression in menu<br />
+        /// 7 = Dance Mode<br />
+        /// 8 = AFK Mode<br />
         /// </value>
         public static readonly Parameter FacialExpressionControlMode = new Parameter
         {
