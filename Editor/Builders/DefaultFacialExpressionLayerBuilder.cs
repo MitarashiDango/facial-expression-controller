@@ -57,7 +57,14 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             if (_fec.generateDefaultFacialAnimation)
             {
                 var feag = new FacialExpressionAnimationGenerator();
-                return feag.FromAvatar("Default Facial Expression (Auto Generated)", _avatarRootObject, null);
+                var generated = feag.FromAvatar("Default Facial Expression (Auto Generated)", _avatarRootObject, null);
+                if (generated != null)
+                {
+                    return generated;
+                }
+
+                Debug.LogWarning("[FacialExpressionController] Failed to auto-generate the default facial expression animation. Falling back to a blank animation clip.");
+                return blankAnimationClip;
             }
             return _fec.defaultFace != null ? _fec.defaultFace : blankAnimationClip;
         }

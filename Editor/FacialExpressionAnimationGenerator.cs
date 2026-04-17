@@ -171,12 +171,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return null;
             }
 
-            var body = avatarRootObject.transform.Find("Body");
-            var smr = body != null ? body.GetComponent<SkinnedMeshRenderer>() : null;
-
+            var smr = ResolveFaceSkinnedMeshRenderer(ad, avatarRootObject);
             if (smr == null)
             {
-                Debug.LogWarning($"[FacialExpressionController] SkinnedMeshRenderer が見つかりませんでした: {avatarRootObject.name}");
+                Debug.LogWarning($"[FacialExpressionController] Could not find a SkinnedMeshRenderer for facial expressions on avatar: {avatarRootObject.name}");
                 return null;
             }
 
@@ -214,6 +212,32 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             return animationClip;
+        }
+
+        /// <summary>
+        /// 表情アニメーション生成に用いる SkinnedMeshRenderer を解決する。<br />
+        /// 優先度: (1) Viseme 用 SMR → (2) まばたき用 SMR → (3) 旧仕様互換の "Body" 直下 SMR
+        /// </summary>
+        /// <param name="ad">アバターの VRCAvatarDescriptor</param>
+        /// <param name="avatarRootObject">アバターのルートオブジェクト</param>
+        /// <returns>表情用 SMR (解決できなければ null)</returns>
+        private SkinnedMeshRenderer ResolveFaceSkinnedMeshRenderer(VRCAvatarDescriptor ad, GameObject avatarRootObject)
+        {
+            if (ad.lipSync == VRC.SDKBase.VRC_AvatarDescriptor.LipSyncStyle.VisemeBlendShape
+                && ad.VisemeSkinnedMesh != null)
+            {
+                return ad.VisemeSkinnedMesh;
+            }
+
+            if (ad.enableEyeLook
+                && ad.customEyeLookSettings.eyelidType == VRCAvatarDescriptor.EyelidType.Blendshapes
+                && ad.customEyeLookSettings.eyelidsSkinnedMesh != null)
+            {
+                return ad.customEyeLookSettings.eyelidsSkinnedMesh;
+            }
+
+            var body = avatarRootObject.transform.Find("Body");
+            return body != null ? body.GetComponent<SkinnedMeshRenderer>() : null;
         }
 
         /// <summary>

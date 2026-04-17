@@ -1,3 +1,4 @@
+using System.Linq;
 using MitarashiDango.FacialExpressionController.Editor;
 using MitarashiDango.FacialExpressionController.Runtime;
 using nadena.dev.modular_avatar.core;
@@ -22,18 +23,26 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void Processing(BuildContext ctx)
         {
-            var fec = ctx.AvatarRootObject.GetComponentInChildren<FacialExpressionControl>();
-            if (fec == null)
+            var fecs = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControl>(true);
+            if (fecs.Length == 0)
             {
                 DestroyComponents(ctx);
                 return;
             }
 
+            if (fecs.Length > 1)
+            {
+                var paths = string.Join(", ", fecs.Select(f => MiscUtil.GetPathInHierarchy(f.gameObject, ctx.AvatarRootObject)));
+                Debug.LogWarning($"[FacialExpressionController] Multiple FacialExpressionControl components were detected. Only the first one will be processed. Detected at: {paths}");
+            }
+
+            var fec = fecs[0];
+
             CreateMAParameters(fec);
             CreateAnimatorControllerProcess(ctx, fec);
             SetupContactReceiver(fec);
 
-            var fecMenus = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControlMenu>();
+            var fecMenus = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControlMenu>(true);
             foreach (var fecMenu in fecMenus)
             {
                 BuildMenuTree(fec, fecMenu);
