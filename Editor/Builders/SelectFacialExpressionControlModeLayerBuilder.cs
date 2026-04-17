@@ -5,6 +5,19 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 {
     public class SelectFacialExpressionControlModeLayerBuilder : LayerBuilderBase
     {
+        /// <summary>
+        /// 左右ハンドジェスチャー用ステートの生成パラメーター
+        /// </summary>
+        private class HandGestureStateSpec
+        {
+            public string StateName;
+            public int ModeType;
+            public int HandValue;                // State_CurrentGestureHand の値 (1 = 左, 2 = 右)
+            public Parameter CurrentGestureParameter;  // State_CurrentGestureLeft / Right
+            public bool IsFixed;                 // FacialExpressionLocked=true で入る Fixed 版かどうか
+            public Vector3 Position;
+        }
+
         public SelectFacialExpressionControlModeLayerBuilder(AnimationClip blankClip) : base(blankClip)
         {
         }
@@ -21,13 +34,76 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             initialState.writeDefaultValues = false;
             initialState.motion = blankAnimationClip;
 
-            var inactiveState = layer.stateMachine.AddState("Inactive", new Vector3(300, 80, 0));
-            inactiveState.writeDefaultValues = false;
-            inactiveState.motion = blankAnimationClip;
-            inactiveState.behaviours = new StateMachineBehaviour[]
+            AddInactiveState(layer.stateMachine, initialState);
+            AddNeutralState(layer.stateMachine, initialState);
+
+            var handGestureSpecs = new[]
             {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.FacialExpressionControlInactive),
+                new HandGestureStateSpec
+                {
+                    StateName = "Left Hand Gesture",
+                    ModeType = FacialExpressionControlModeType.LeftHandGesture,
+                    HandValue = 1,
+                    CurrentGestureParameter = InternalParameters.State_CurrentGestureLeft,
+                    IsFixed = false,
+                    Position = new Vector3(300, 240, 0),
+                },
+                new HandGestureStateSpec
+                {
+                    StateName = "Left Hand Gesture (Fixed)",
+                    ModeType = FacialExpressionControlModeType.LeftHandGestureFixed,
+                    HandValue = 1,
+                    CurrentGestureParameter = InternalParameters.State_CurrentGestureLeft,
+                    IsFixed = true,
+                    Position = new Vector3(300, 320, 0),
+                },
+                new HandGestureStateSpec
+                {
+                    StateName = "Right Hand Gesture",
+                    ModeType = FacialExpressionControlModeType.RightHandGesture,
+                    HandValue = 2,
+                    CurrentGestureParameter = InternalParameters.State_CurrentGestureRight,
+                    IsFixed = false,
+                    Position = new Vector3(300, 400, 0),
+                },
+                new HandGestureStateSpec
+                {
+                    StateName = "Right Hand Gesture (Fixed)",
+                    ModeType = FacialExpressionControlModeType.RightHandGestureFixed,
+                    HandValue = 2,
+                    CurrentGestureParameter = InternalParameters.State_CurrentGestureRight,
+                    IsFixed = true,
+                    Position = new Vector3(300, 480, 0),
+                },
             };
+
+            foreach (var spec in handGestureSpecs)
+            {
+                AddHandGestureState(layer.stateMachine, initialState, spec);
+            }
+
+            AddSelectedFacialExpressionInMenuState(layer.stateMachine, initialState);
+            AddDanceModeState(layer.stateMachine, initialState);
+            AddAfkState(layer.stateMachine, initialState);
+
+            return layer;
+        }
+
+        private AnimatorState CreateModeState(AnimatorStateMachine stateMachine, string stateName, int modeType, Vector3 position)
+        {
+            var state = stateMachine.AddState(stateName, position);
+            state.writeDefaultValues = false;
+            state.motion = blankAnimationClip;
+            state.behaviours = new StateMachineBehaviour[]
+            {
+                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, modeType),
+            };
+            return state;
+        }
+
+        private void AddInactiveState(AnimatorStateMachine stateMachine, AnimatorState initialState)
+        {
+            var inactiveState = CreateModeState(stateMachine, "Inactive", FacialExpressionControlModeType.FacialExpressionControlInactive, new Vector3(300, 80, 0));
 
             AnimatorTransitionUtil.AddTransition(initialState, inactiveState)
                 .If(VRCParameters.IS_LOCAL)
@@ -37,54 +113,41 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             AnimatorTransitionUtil.AddExitTransition(inactiveState)
                 .If(InternalParameters.FacialExpressionControlON)
                 .SetImmediateTransitionSettings();
+        }
 
-            var neutralState = layer.stateMachine.AddState("Neutral", new Vector3(300, 160, 0));
-            neutralState.writeDefaultValues = false;
-            neutralState.motion = blankAnimationClip;
-            neutralState.behaviours = new StateMachineBehaviour[]
-            {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.Neutral),
-            };
+        private void AddNeutralState(AnimatorStateMachine stateMachine, AnimatorState initialState)
+        {
+            var neutralState = CreateModeState(stateMachine, "Neutral", FacialExpressionControlModeType.Neutral, new Vector3(300, 160, 0));
 
             // 左右どちらの手のジェスチャーも適用されていないパターン (Neutral)
             AnimatorTransitionUtil.AddTransition(initialState, neutralState)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
                 .Equals(InternalParameters.State_CurrentGestureHand, 0)
                 .SetImmediateTransitionSettings();
 
-            // 左手のジェスチャーが適用されているが、Neutralな値である場合
-            AnimatorTransitionUtil.AddTransition(initialState, neutralState)
-                .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
+            // 片手のジェスチャーが選ばれているが値が 0 (Neutral)
+            for (int hand = 1; hand <= 2; hand++)
+            {
+                var currentGestureParam = hand == 1 ? InternalParameters.State_CurrentGestureLeft : InternalParameters.State_CurrentGestureRight;
 
-                .IfNot(InternalParameters.State_AFKModeActive)
-                .IfNot(InternalParameters.State_DanceModeActive)
-                .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
-                .Equals(InternalParameters.State_CurrentGestureHand, 1)
-                .Equals(InternalParameters.State_CurrentGestureLeft, 0)
-                .SetImmediateTransitionSettings();
-
-            // 右手のジェスチャーが適用されているが、Neutralな値である場合
-            AnimatorTransitionUtil.AddTransition(initialState, neutralState)
-                .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
-
-                .IfNot(InternalParameters.State_AFKModeActive)
-                .IfNot(InternalParameters.State_DanceModeActive)
-                .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
-                .Equals(InternalParameters.State_CurrentGestureHand, 2)
-                .Equals(InternalParameters.State_CurrentGestureRight, 0)
-                .SetImmediateTransitionSettings();
+                AnimatorTransitionUtil.AddTransition(initialState, neutralState)
+                    .If(VRCParameters.IS_LOCAL)
+                    .If(InternalParameters.FacialExpressionControlON)
+                    .IfNot(InternalParameters.State_AFKModeActive)
+                    .IfNot(InternalParameters.State_DanceModeActive)
+                    .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
+                    .Equals(InternalParameters.State_CurrentGestureHand, hand)
+                    .Equals(currentGestureParam, 0)
+                    .SetImmediateTransitionSettings();
+            }
 
             AnimatorTransitionUtil.AddExitTransition(neutralState)
                 .IfNot(InternalParameters.FacialExpressionControlON)
                 .SetImmediateTransitionSettings();
-
 
             AnimatorTransitionUtil.AddExitTransition(neutralState)
                 .If(InternalParameters.State_AFKModeActive)
@@ -98,301 +161,164 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 .NotEqual(InternalParameters.SelectedFacialExpressionInMenu, 0)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(neutralState)
-                .IfNot(InternalParameters.FacialExpressionLocked)
-                .Equals(InternalParameters.State_CurrentGestureHand, 1)
-                .NotEqual(InternalParameters.State_CurrentGestureLeft, 0)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(neutralState)
-                .IfNot(InternalParameters.FacialExpressionLocked)
-                .Equals(InternalParameters.State_CurrentGestureHand, 2)
-                .NotEqual(InternalParameters.State_CurrentGestureRight, 0)
-                .SetImmediateTransitionSettings();
-
-            var leftHandGestureState = layer.stateMachine.AddState("Left Hand Gesture", new Vector3(300, 240, 0));
-            leftHandGestureState.writeDefaultValues = false;
-            leftHandGestureState.motion = blankAnimationClip;
-            leftHandGestureState.behaviours = new StateMachineBehaviour[]
+            for (int hand = 1; hand <= 2; hand++)
             {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.LeftHandGesture),
-            };
+                var currentGestureParam = hand == 1 ? InternalParameters.State_CurrentGestureLeft : InternalParameters.State_CurrentGestureRight;
 
-            AnimatorTransitionUtil.AddTransition(initialState, leftHandGestureState)
+                AnimatorTransitionUtil.AddExitTransition(neutralState)
+                    .IfNot(InternalParameters.FacialExpressionLocked)
+                    .Equals(InternalParameters.State_CurrentGestureHand, hand)
+                    .NotEqual(currentGestureParam, 0)
+                    .SetImmediateTransitionSettings();
+            }
+        }
+
+        /// <summary>
+        /// 左右ハンドジェスチャー用のステートを <paramref name="spec"/> に基づいて生成する。
+        /// Normal (未ロック時) と Fixed (ロック時) で Entry/Exit のロック条件のみ反転する。
+        /// </summary>
+        private void AddHandGestureState(AnimatorStateMachine stateMachine, AnimatorState initialState, HandGestureStateSpec spec)
+        {
+            var state = CreateModeState(stateMachine, spec.StateName, spec.ModeType, spec.Position);
+
+            // Entry
+            var entryTransition = AnimatorTransitionUtil.AddTransition(initialState, state)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
-                .Equals(InternalParameters.State_CurrentGestureHand, 1)
-                .NotEqual(InternalParameters.State_CurrentGestureLeft, 0)
-                .IfNot(InternalParameters.FacialExpressionLocked)
-                .SetImmediateTransitionSettings();
+                .Equals(InternalParameters.State_CurrentGestureHand, spec.HandValue)
+                .NotEqual(spec.CurrentGestureParameter, 0);
 
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureState)
+            if (spec.IsFixed)
+            {
+                entryTransition.If(InternalParameters.FacialExpressionLocked);
+            }
+            else
+            {
+                entryTransition.IfNot(InternalParameters.FacialExpressionLocked);
+            }
+            entryTransition.SetImmediateTransitionSettings();
+
+            // Exit - 共通 (Normal/Fixed 双方)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .IfNot(InternalParameters.FacialExpressionControlON)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .If(InternalParameters.State_AFKModeActive)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .If(InternalParameters.State_DanceModeActive)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .NotEqual(InternalParameters.SelectedFacialExpressionInMenu, 0)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureState)
-                .NotEqual(InternalParameters.State_CurrentGestureHand, 1)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureState)
-                .Equals(InternalParameters.State_CurrentGestureHand, 1)
-                .Equals(InternalParameters.State_CurrentGestureLeft, 0)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureState)
-                .If(InternalParameters.FacialExpressionLocked)
-                .SetImmediateTransitionSettings();
-
-            var leftHandGestureFixedState = layer.stateMachine.AddState("Left Hand Gesture (Fixed)", new Vector3(300, 320, 0));
-            leftHandGestureFixedState.writeDefaultValues = false;
-            leftHandGestureFixedState.motion = blankAnimationClip;
-            leftHandGestureFixedState.behaviours = new StateMachineBehaviour[]
+            // Exit - ジェスチャー状態の変化 (Fixed のときだけ FacialExpressionLocked 解除が条件に追加される)
+            var handMismatchExit = AnimatorTransitionUtil.AddExitTransition(state);
+            if (spec.IsFixed)
             {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.LeftHandGestureFixed),
-            };
+                handMismatchExit.IfNot(InternalParameters.FacialExpressionLocked);
+            }
+            handMismatchExit.NotEqual(InternalParameters.State_CurrentGestureHand, spec.HandValue)
+                .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddTransition(initialState, leftHandGestureFixedState)
+            var gestureResetExit = AnimatorTransitionUtil.AddExitTransition(state);
+            if (spec.IsFixed)
+            {
+                gestureResetExit.IfNot(InternalParameters.FacialExpressionLocked);
+            }
+            gestureResetExit.Equals(InternalParameters.State_CurrentGestureHand, spec.HandValue)
+                .Equals(spec.CurrentGestureParameter, 0)
+                .SetImmediateTransitionSettings();
+
+            // Exit - ロック状態の変化
+            var lockExit = AnimatorTransitionUtil.AddExitTransition(state);
+            if (spec.IsFixed)
+            {
+                lockExit.IfNot(InternalParameters.FacialExpressionLocked);
+            }
+            else
+            {
+                lockExit.If(InternalParameters.FacialExpressionLocked);
+            }
+            lockExit.SetImmediateTransitionSettings();
+        }
+
+        private void AddSelectedFacialExpressionInMenuState(AnimatorStateMachine stateMachine, AnimatorState initialState)
+        {
+            var state = CreateModeState(stateMachine, "Selected Facial Expression (In Menu)", FacialExpressionControlModeType.SelectedFacialExpressionInMenu, new Vector3(300, 560, 0));
+
+            AnimatorTransitionUtil.AddTransition(initialState, state)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
-
-                .IfNot(InternalParameters.State_AFKModeActive)
-                .IfNot(InternalParameters.State_DanceModeActive)
-                .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
-                .Equals(InternalParameters.State_CurrentGestureHand, 1)
-                .NotEqual(InternalParameters.State_CurrentGestureLeft, 0)
-                .If(InternalParameters.FacialExpressionLocked)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureFixedState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureFixedState)
-                .If(InternalParameters.State_AFKModeActive)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureFixedState)
-                .If(InternalParameters.State_DanceModeActive)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureFixedState)
-                .NotEqual(InternalParameters.SelectedFacialExpressionInMenu, 0)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureFixedState)
-                .IfNot(InternalParameters.FacialExpressionLocked)
-                .NotEqual(InternalParameters.State_CurrentGestureHand, 1)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureFixedState)
-                .IfNot(InternalParameters.FacialExpressionLocked)
-                .Equals(InternalParameters.State_CurrentGestureHand, 1)
-                .Equals(InternalParameters.State_CurrentGestureLeft, 0)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(leftHandGestureFixedState)
-                .IfNot(InternalParameters.FacialExpressionLocked)
-                .SetImmediateTransitionSettings();
-
-            var rightHandGestureState = layer.stateMachine.AddState("Right Hand Gesture", new Vector3(300, 400, 0));
-            rightHandGestureState.writeDefaultValues = false;
-            rightHandGestureState.motion = blankAnimationClip;
-            rightHandGestureState.behaviours = new StateMachineBehaviour[]
-            {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.RightHandGesture),
-            };
-
-            AnimatorTransitionUtil.AddTransition(initialState, rightHandGestureState)
-                .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
-
-                .IfNot(InternalParameters.State_AFKModeActive)
-                .IfNot(InternalParameters.State_DanceModeActive)
-                .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
-                .Equals(InternalParameters.State_CurrentGestureHand, 2)
-                .NotEqual(InternalParameters.State_CurrentGestureRight, 0)
-                .IfNot(InternalParameters.FacialExpressionLocked)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureState)
-                .If(InternalParameters.State_AFKModeActive)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureState)
-                .If(InternalParameters.State_DanceModeActive)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureState)
-                .NotEqual(InternalParameters.SelectedFacialExpressionInMenu, 0)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureState)
-                .NotEqual(InternalParameters.State_CurrentGestureHand, 2)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureState)
-                .Equals(InternalParameters.State_CurrentGestureHand, 2)
-                .Equals(InternalParameters.State_CurrentGestureRight, 0)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureState)
-                .If(InternalParameters.FacialExpressionLocked)
-                .SetImmediateTransitionSettings();
-
-            var rightHandGestureFixedState = layer.stateMachine.AddState("Right Hand Gesture (Fixed)", new Vector3(300, 480, 0));
-            rightHandGestureFixedState.writeDefaultValues = false;
-            rightHandGestureFixedState.motion = blankAnimationClip;
-            rightHandGestureFixedState.behaviours = new StateMachineBehaviour[]
-            {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.RightHandGestureFixed),
-            };
-
-            AnimatorTransitionUtil.AddTransition(initialState, rightHandGestureFixedState)
-                .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
-
-                .IfNot(InternalParameters.State_AFKModeActive)
-                .IfNot(InternalParameters.State_DanceModeActive)
-                .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
-                .Equals(InternalParameters.State_CurrentGestureHand, 2)
-                .NotEqual(InternalParameters.State_CurrentGestureRight, 0)
-                .If(InternalParameters.FacialExpressionLocked)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureFixedState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureFixedState)
-                .If(InternalParameters.State_AFKModeActive)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureFixedState)
-                .If(InternalParameters.State_DanceModeActive)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureFixedState)
-                .NotEqual(InternalParameters.SelectedFacialExpressionInMenu, 0)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureFixedState)
-                .IfNot(InternalParameters.FacialExpressionLocked)
-                .NotEqual(InternalParameters.State_CurrentGestureHand, 2)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureFixedState)
-                .IfNot(InternalParameters.FacialExpressionLocked)
-                .Equals(InternalParameters.State_CurrentGestureHand, 2)
-                .Equals(InternalParameters.State_CurrentGestureRight, 0)
-                .SetImmediateTransitionSettings();
-
-            AnimatorTransitionUtil.AddExitTransition(rightHandGestureFixedState)
-                .IfNot(InternalParameters.FacialExpressionLocked)
-                .SetImmediateTransitionSettings();
-
-            var selectedFacialExpressionInMenuState = layer.stateMachine.AddState("Selected Facial Expression (In Menu)", new Vector3(300, 560, 0));
-            selectedFacialExpressionInMenuState.writeDefaultValues = false;
-            selectedFacialExpressionInMenuState.motion = blankAnimationClip;
-            selectedFacialExpressionInMenuState.behaviours = new StateMachineBehaviour[]
-            {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.SelectedFacialExpressionInMenu),
-            };
-
-            AnimatorTransitionUtil.AddTransition(initialState, selectedFacialExpressionInMenuState)
-                .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
-
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .NotEqual(InternalParameters.SelectedFacialExpressionInMenu, 0)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(selectedFacialExpressionInMenuState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .IfNot(InternalParameters.FacialExpressionControlON)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(selectedFacialExpressionInMenuState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .If(InternalParameters.State_AFKModeActive)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(selectedFacialExpressionInMenuState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .If(InternalParameters.State_DanceModeActive)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(selectedFacialExpressionInMenuState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
                 .SetImmediateTransitionSettings();
+        }
 
-            var danceModeState = layer.stateMachine.AddState("Dance Mode", new Vector3(300, 640, 0));
-            danceModeState.writeDefaultValues = false;
-            danceModeState.motion = blankAnimationClip;
-            danceModeState.behaviours = new StateMachineBehaviour[]
-            {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.DanceMode),
-            };
+        private void AddDanceModeState(AnimatorStateMachine stateMachine, AnimatorState initialState)
+        {
+            var state = CreateModeState(stateMachine, "Dance Mode", FacialExpressionControlModeType.DanceMode, new Vector3(300, 640, 0));
 
-            AnimatorTransitionUtil.AddTransition(initialState, danceModeState)
+            AnimatorTransitionUtil.AddTransition(initialState, state)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .If(InternalParameters.State_DanceModeActive)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(danceModeState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .IfNot(InternalParameters.FacialExpressionControlON)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(danceModeState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .If(InternalParameters.State_AFKModeActive)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(danceModeState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .SetImmediateTransitionSettings();
+        }
 
-            var afkState = layer.stateMachine.AddState("AFK", new Vector3(300, 880, 0));
-            afkState.writeDefaultValues = false;
-            afkState.motion = blankAnimationClip;
-            afkState.behaviours = new StateMachineBehaviour[]
-            {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.AFKMode),
-            };
+        private void AddAfkState(AnimatorStateMachine stateMachine, AnimatorState initialState)
+        {
+            var state = CreateModeState(stateMachine, "AFK", FacialExpressionControlModeType.AFKMode, new Vector3(300, 880, 0));
 
-            AnimatorTransitionUtil.AddTransition(initialState, afkState)
+            AnimatorTransitionUtil.AddTransition(initialState, state)
                 .If(VRCParameters.IS_LOCAL)
                 .If(InternalParameters.FacialExpressionControlON)
                 .If(InternalParameters.State_AFKModeActive)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(afkState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .IfNot(InternalParameters.FacialExpressionControlON)
                 .SetImmediateTransitionSettings();
 
-            AnimatorTransitionUtil.AddExitTransition(afkState)
+            AnimatorTransitionUtil.AddExitTransition(state)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .SetImmediateTransitionSettings();
-
-            return layer;
         }
     }
 }
