@@ -18,8 +18,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         public override AnimatorControllerLayer Build()
         {
             var layer = CreateAnimatorControllerLayer("FEC_DEFAULT_FACIAL_EXPRESSION", 1.0f);
-            layer.stateMachine.entryPosition = new Vector3(0, 0, 0);
-            layer.stateMachine.anyStatePosition = new Vector3(0, -80, 0);
+            layer.stateMachine.entryPosition = AnimatorLayout.DefaultEntryPosition;
+            layer.stateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
 
             var initialState = layer.stateMachine.AddState("Initial State", new Vector3(-20, 80, 0));
             initialState.writeDefaultValues = false;
