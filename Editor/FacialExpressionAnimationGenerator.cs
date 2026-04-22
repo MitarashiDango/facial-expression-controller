@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -60,90 +61,35 @@ namespace MitarashiDango.FacialExpressionController.Editor
             AssetDatabase.Refresh();
         }
 
-        public static readonly string[] mmdBlendShapes =
+        // MMD ワールド用ブレンドシェイプ名の一覧。行区切りのテキストアセットから読み込む。
+        private const string MmdBlendShapesAssetPath = "Packages/com.matcha-soft.facial-expression-controller/Editor/MMD_BlendShapes.txt";
+        private static string[] _cachedMmdBlendShapes;
+
+        public static IReadOnlyList<string> MmdBlendShapes => GetMmdBlendShapes();
+
+        private static string[] GetMmdBlendShapes()
         {
-            "通常",
-            "まばたき",
-            "笑い",
-            "ウィンク",
-            "ウィンク右",
-            "ウィンク２",
-            "ウィンク２右",
-            "ｳｨﾝｸ２右",
-            "なごみ",
-            "なごみω",
-            "はぅ",
-            "びっくり",
-            "じと目",
-            "ｷﾘｯ",
-            "はちゅ目",
-            "はちゅ目縦潰れ",
-            "はちゅ目横潰れ",
-            "星目",
-            "はぁと",
-            "瞳大",
-            "瞳小",
-            "瞳縦潰れ",
-            "光下",
-            "恐ろしい子！",
-            "ハイライト消し",
-            "ハイライト消",
-            "映り込み消し",
-            "映り込み消",
-            "喜び",
-            "わぉ?!",
-            "わぉ？！",
-            "あ",
-            "い",
-            "う",
-            "え",
-            "お",
-            "あ２",
-            "ん",
-            "ワ",
-            "□",
-            "ω",
-            "ω□",
-            "∧",
-            "▲",
-            "にやり",
-            "にやり2",
-            "にやり２",
-            "にっこり",
-            "ぺろっ",
-            "てへぺろ",
-            "てへぺろ2",
-            "てへぺろ２",
-            "口角上げ",
-            "口角下げ",
-            "口横広げ",
-            "歯無し上",
-            "歯無し下",
-            "ハンサム",
-            "真面目",
-            "困る",
-            "にこり",
-            "怒り",
-            "悲しむ",
-            "敵意",
-            "上",
-            "下",
-            "前",
-            "眉頭左",
-            "眉頭右",
-            "照れ",
-            "涙",
-            "がーん",
-            "青ざめる",
-            "青ざめ",
-            "髪影消",
-            "輪郭",
-            "メガネ",
-            "みっぱい",
-            "えー",
-            "はんっ!",
-            "はんっ！",
-        };
+            if (_cachedMmdBlendShapes != null)
+            {
+                return _cachedMmdBlendShapes;
+            }
+
+            var asset = AssetDatabase.LoadAssetAtPath<TextAsset>(MmdBlendShapesAssetPath);
+            if (asset == null)
+            {
+                Debug.LogWarning($"[FacialExpressionController] Cannot load MMD blend shape list: {MmdBlendShapesAssetPath}");
+                _cachedMmdBlendShapes = Array.Empty<string>();
+                return _cachedMmdBlendShapes;
+            }
+
+            _cachedMmdBlendShapes = asset.text
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Trim())
+                .Where(line => !string.IsNullOrEmpty(line))
+                .ToArray();
+
+            return _cachedMmdBlendShapes;
+        }
 
         /// <summary>
         /// アバターに設定されている表情シェイプキーの値をもとに表情アニメーションクリップを生成する
@@ -186,7 +132,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             excludeBlendShapes.AddRange(BlendShapeUtil.FindEmptyBlendShapes(smr));
 
             // MMDワールド用ブレンドシェイプは除外対象とする
-            excludeBlendShapes.AddRange(mmdBlendShapes);
+            excludeBlendShapes.AddRange(GetMmdBlendShapes());
 
             // リップシンク制御用のブレンドシェイプは除外対象とする
             excludeBlendShapes.AddRange(GetLipSyncBlendShapes(ad));
