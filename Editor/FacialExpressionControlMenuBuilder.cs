@@ -283,7 +283,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             noFacialExpressionSelectionToggle.transform.SetParent(subMenu.transform);
 
             var facialExpressionNumber = 1;
-            foreach (var (facialExpressionGroup, i) in fec.facialExpressionGroups.Select((v, i) => (v, i)))
+            foreach (var (facialExpressionGroup, i) in FacialExpressionControlBuildUtil.GetValidGroups(fec).Select((v, i) => (v, i)))
             {
                 var groupName = string.IsNullOrEmpty(facialExpressionGroup.groupName) ? $"グループ {(i + 1).ToString()}" : facialExpressionGroup.groupName;
 
