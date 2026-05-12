@@ -38,6 +38,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             var feag = new FacialExpressionAnimationGenerator();
             var ac = feag.FromAvatar(go, null);
+            if (ac == null)
+            {
+                EditorUtility.DisplayDialog("エラー", "表情用のSkinnedMeshRendererを検出できなかったため、アニメーションクリップを生成できませんでした。", "OK");
+                return;
+            }
 
             var filePath = EditorUtility.SaveFilePanelInProject("名前を付けて保存", $"AnimationClip_{go.name}", "anim", "アニメーションクリップの保存先を選択してください", "Assets");
             if (filePath == "")
