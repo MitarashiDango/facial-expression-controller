@@ -82,13 +82,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void DestroyComponents(BuildContext ctx)
         {
-            var facialExpressionControls = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControl>();
+            var facialExpressionControls = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControl>(true);
             foreach (var facialExpressionControl in facialExpressionControls)
             {
                 Object.DestroyImmediate(facialExpressionControl);
             }
 
-            var facialExpressionControlMenus = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControlMenu>();
+            var facialExpressionControlMenus = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControlMenu>(true);
             foreach (var facialExpressionControlMenu in facialExpressionControlMenus)
             {
                 Object.DestroyImmediate(facialExpressionControlMenu);
