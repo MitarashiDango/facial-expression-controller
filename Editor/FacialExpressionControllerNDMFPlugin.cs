@@ -60,9 +60,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private bool ValidateFacialExpressionCount(FacialExpressionControl fec)
         {
             var gestureMaxNumber = fec.facialExpressionGesturePresets.Count * FacialExpressionNumbering.GestureCountPerPreset;
-            var menuMaxNumber = fec.facialExpressionGroups
-                .Where(g => g != null)
-                .Sum(g => g.facialExpressions != null ? g.facialExpressions.Count : 0);
+            var menuMaxNumber = FacialExpressionControlBuildUtil.GetValidGroups(fec)
+                .Sum(g => g.facialExpressions.Count);
 
             var valid = true;
 

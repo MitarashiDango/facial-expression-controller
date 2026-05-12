@@ -150,7 +150,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 }
             }
 
-            var selectedFacialExpressions = _fec.facialExpressionGroups
+            var selectedFacialExpressions = FacialExpressionControlBuildUtil.GetValidGroups(_fec)
                 .SelectMany(x => x.facialExpressions)
                 .Select((v, i) => new { v, i })
                 .GroupBy(x => x.i / FacialExpressionNumbering.StateGroupSize)
