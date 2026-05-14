@@ -1,6 +1,6 @@
 using System.Linq;
 using MitarashiDango.FacialExpressionController.Editor;
-using MitarashiDango.FacialExpressionController.Runtime;
+using MitarashiDango.FacialExpressionController;
 using nadena.dev.modular_avatar.core;
 using nadena.dev.ndmf;
 using UnityEngine;

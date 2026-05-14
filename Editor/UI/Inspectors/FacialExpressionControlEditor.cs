@@ -1,4 +1,4 @@
-using MitarashiDango.FacialExpressionController.Runtime;
+using MitarashiDango.FacialExpressionController;
 using nadena.dev.ndmf.localization;
 using UnityEditor;
 using UnityEditor.UIElements;

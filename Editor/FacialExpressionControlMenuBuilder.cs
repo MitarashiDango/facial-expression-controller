@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using MitarashiDango.FacialExpressionController.Runtime;
+using MitarashiDango.FacialExpressionController;
 using nadena.dev.modular_avatar.core;
 using UnityEngine;
 using VRC.SDK3.Avatars.ScriptableObjects;

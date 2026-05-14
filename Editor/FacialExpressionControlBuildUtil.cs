@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
-using MitarashiDango.FacialExpressionController.Runtime;
+using MitarashiDango.FacialExpressionController;
 
 namespace MitarashiDango.FacialExpressionController.Editor
 {
