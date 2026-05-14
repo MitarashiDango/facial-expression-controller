@@ -3,7 +3,7 @@ using UnityEngine;
 using VRC.SDK3.Dynamics.Contact.Components;
 using VRC.SDKBase;
 
-namespace MitarashiDango.FacialExpressionController.Runtime
+namespace MitarashiDango.FacialExpressionController
 {
     [DisallowMultipleComponent]
     [AddComponentMenu("Facial Expression Controller/Facial Expression Control")]

@@ -1,6 +1,6 @@
 using System;
 
-namespace MitarashiDango.FacialExpressionController.Runtime
+namespace MitarashiDango.FacialExpressionController
 {
     [Serializable]
     public class AFKExitMotionWaitParameterCondition

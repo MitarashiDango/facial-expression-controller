@@ -1,7 +1,7 @@
 using UnityEngine;
 using VRC.SDKBase;
 
-namespace MitarashiDango.FacialExpressionController.Runtime
+namespace MitarashiDango.FacialExpressionController
 {
     [DisallowMultipleComponent]
     [AddComponentMenu("Facial Expression Controller/Facial Expression Control Menu")]

@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
-using MitarashiDango.FacialExpressionController.Runtime;
+using MitarashiDango.FacialExpressionController;
 using UnityEditor.Animations;
 using UnityEngine;
 using VRC.SDKBase;

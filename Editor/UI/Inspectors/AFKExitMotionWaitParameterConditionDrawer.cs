@@ -1,4 +1,4 @@
-using MitarashiDango.FacialExpressionController.Runtime;
+using MitarashiDango.FacialExpressionController;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine.UIElements;

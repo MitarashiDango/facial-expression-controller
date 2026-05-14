@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace MitarashiDango.FacialExpressionController.Runtime
+namespace MitarashiDango.FacialExpressionController
 {
     [Serializable]
     public class FacialExpression

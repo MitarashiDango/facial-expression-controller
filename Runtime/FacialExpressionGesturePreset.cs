@@ -1,7 +1,7 @@
 
 using UnityEngine;
 
-namespace MitarashiDango.FacialExpressionController.Runtime
+namespace MitarashiDango.FacialExpressionController
 {
     [CreateAssetMenu(fileName = "New Facial Expression Gesture Preset", menuName = "Facial Expression Controller/Facial Expression Gesture Preset", order = 1)]
     public class FacialExpressionGesturePreset : ScriptableObject

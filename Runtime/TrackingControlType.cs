@@ -1,7 +1,7 @@
 
 using UnityEngine;
 
-namespace MitarashiDango.FacialExpressionController.Runtime
+namespace MitarashiDango.FacialExpressionController
 {
     public enum TrackingControlType
     {
