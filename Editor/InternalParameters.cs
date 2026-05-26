@@ -3,11 +3,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
     public class InternalParameters
     {
         /// <summary>
-        /// 表情コントロールをOFFにするかどうか (true: する, false: しない)
+        /// 表情制御を有効にするかどうか (true: 有効, false: 無効)
         /// </summary>
-        public static readonly Parameter FacialExpressionControlON = new Parameter
+        public static readonly Parameter FacialExpressionControllerEnabled = new Parameter
         {
-            name = "FEC/Internal/FacialExpressionControlON",
+            name = "FEC/Internal/FacialExpressionControllerEnabled",
             parameterType = UnityEngine.AnimatorControllerParameterType.Bool,
             defaultBool = true,
             localOnly = true,
@@ -17,12 +17,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// <summary>
         /// ダンスモードへの切り替えを有効化するかどうか (true: する, false: しない)
         /// ダンスモードがアクティブになった場合、以下の状態となる<br />
-        /// - 表情コントロールが一時的に非アクティブとなる<br />
+        /// - 表情制御が一時的に非アクティブとなる<br />
         /// - 表情ロック用のContact Receiverが一時的に無効化される
         /// </summary>
-        public static readonly Parameter SwitchToDanceModeON = new Parameter
+        public static readonly Parameter DanceModeAutoSwitchEnabled = new Parameter
         {
-            name = "FEC/Internal/SwitchToDanceModeON",
+            name = "FEC/Internal/DanceModeAutoSwitchEnabled",
             parameterType = UnityEngine.AnimatorControllerParameterType.Bool,
             defaultBool = true,
             localOnly = true,
@@ -35,9 +35,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// - 表情が一時的に固定される<br />
         /// - 表情ロック用のContact Receiverが一時的に無効化される
         /// </summary>
-        public static readonly Parameter SwitchToVehicleModeON = new Parameter
+        public static readonly Parameter VehicleModeAutoSwitchEnabled = new Parameter
         {
-            name = "FEC/Internal/SwitchToVehicleModeON",
+            name = "FEC/Internal/VehicleModeAutoSwitchEnabled",
             parameterType = UnityEngine.AnimatorControllerParameterType.Bool,
             defaultBool = false,
             localOnly = true,
@@ -93,11 +93,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
         };
 
         /// <summary>
-        /// Contact Receiverによる表情ロックをONにするためのパラメーター
+        /// Contact Receiverによる表情ロックを有効にするためのパラメーター
         /// </summary>
-        public static readonly Parameter ContactLockON = new Parameter
+        public static readonly Parameter ContactLockEnabled = new Parameter
         {
-            name = "FEC/Internal/ContactLockON",
+            name = "FEC/Internal/ContactLockEnabled",
             parameterType = UnityEngine.AnimatorControllerParameterType.Bool,
             defaultBool = true,
             localOnly = true,

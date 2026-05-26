@@ -79,14 +79,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             return new Parameter[]
             {
-                InternalParameters.FacialExpressionControlON,
-                InternalParameters.SwitchToDanceModeON,
-                InternalParameters.SwitchToVehicleModeON,
+                InternalParameters.FacialExpressionControllerEnabled,
+                InternalParameters.DanceModeAutoSwitchEnabled,
+                InternalParameters.VehicleModeAutoSwitchEnabled,
                 InternalParameters.FacialExpressionLocked,
                 InternalParameters.SelectedLeftGesturePreset,
                 InternalParameters.SelectedRightGesturePreset,
                 InternalParameters.SelectedFacialExpressionInMenu,
-                InternalParameters.ContactLockON,
+                InternalParameters.ContactLockEnabled,
                 InternalParameters.FacialExpressionLockReceiverInContact,
                 InternalParameters.GesturePriority,
                 InternalParameters.State_CurrentGestureLeft,
@@ -96,9 +96,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 InternalParameters.State_VehicleModeActive,
                 InternalParameters.State_AFKModeActive,
                 InternalParameters.State_DanceModeActive,
-                SyncParameters.FacialExpressionControlMode,
+                SyncParameters.FacialExpressionMode,
                 SyncParameters.CurrentFacialExpressionNumber,
-                SyncParameters.FixedWeight,
+                SyncParameters.LockedFacialExpressionWeight,
             };
         }
     }

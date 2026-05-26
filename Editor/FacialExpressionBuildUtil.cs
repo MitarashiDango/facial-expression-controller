@@ -4,9 +4,9 @@ using MitarashiDango.FacialExpressionController;
 
 namespace MitarashiDango.FacialExpressionController.Editor
 {
-    internal static class FacialExpressionControlBuildUtil
+    internal static class FacialExpressionBuildUtil
     {
-        public static IEnumerable<FacialExpressionGroup> GetValidGroups(FacialExpressionControl fec)
+        public static IEnumerable<FacialExpressionGroup> GetValidGroups(FacialExpressionController fec)
         {
             return fec.facialExpressionGroups?
                 .Where(g => g != null && g.facialExpressions != null)

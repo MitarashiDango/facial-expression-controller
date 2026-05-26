@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace MitarashiDango.FacialExpressionController.Editor
 {
-    public class FacialExpressionControlAnimatorControllerBuilder
+    public class FacialExpressionAnimatorControllerBuilder
     {
         private enum HandType
         {
@@ -18,7 +18,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// ハンドジェスチャー適用対象判定レイヤーの生成
         /// </summary>
         /// <returns>ハンドジェスチャー適用対象判定レイヤー</returns>
-        public AnimatorController CreateMainAnimatorController(FacialExpressionControl fec)
+        public AnimatorController CreateMainAnimatorController(FacialExpressionController fec)
         {
             var blankClip = new AnimationClip
             {
@@ -56,14 +56,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
             ac.AddLayer(new CopyGestureWeightLayerBuilder(blankClip).Build());
 
             // 表情選択・適用系
-            ac.AddLayer(new SelectFacialExpressionControlModeLayerBuilder(blankClip).Build());
+            ac.AddLayer(new SelectFacialExpressionModeLayerBuilder(blankClip).Build());
             ac.AddLayer(new SelectFacialExpressionNumberLayerBuilder(blankClip, fec).Build());
-            ac.AddLayer(new FacialExpressionControlLayerBuilder(blankClip, fec).Build());
+            ac.AddLayer(new ApplyFacialExpressionLayerBuilder(blankClip, fec).Build());
 
             return ac;
         }
 
-        public AnimatorController CreateDefaultFacialExpressionAnimatorController(BuildContext ctx, FacialExpressionControl fec)
+        public AnimatorController CreateDefaultFacialExpressionAnimatorController(BuildContext ctx, FacialExpressionController fec)
         {
             var blankClip = new AnimationClip
             {
@@ -79,7 +79,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             };
 
             // デフォルト表情レイヤーの構築
-            if (fec.defaultFace != null || fec.generateDefaultFacialAnimation)
+            if (fec.defaultFacialExpressionMotion != null || fec.generateDefaultFacialExpressionAnimation)
             {
                 ac.AddLayer(new DefaultFacialExpressionLayerBuilder(blankClip, fec, ctx.AvatarRootObject).Build());
             }

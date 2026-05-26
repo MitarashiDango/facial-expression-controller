@@ -9,7 +9,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
         public override AnimatorControllerLayer Build()
         {
-            var layer = CreateAnimatorControllerLayer("FEC_COPY_GESUTRE_WEIGHT");
+            var layer = CreateAnimatorControllerLayer("FEC_COPY_GESTURE_WEIGHT");
             layer.stateMachine.entryPosition = AnimatorLayout.DefaultEntryPosition;
             layer.stateMachine.anyStatePosition = AnimatorLayout.DefaultAnyStatePosition;
 
@@ -29,14 +29,14 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             copyLeftState.writeDefaultValues = false; copyLeftState.motion = blankAnimationClip;
             copyLeftState.behaviours = new StateMachineBehaviour[]
             {
-                CreateVRCAvatarParameterLocalCopyDriver(VRCParameters.GESTURE_LEFT_WEIGHT, SyncParameters.FixedWeight)
+                CreateVRCAvatarParameterLocalCopyDriver(VRCParameters.GESTURE_LEFT_WEIGHT, SyncParameters.LockedFacialExpressionWeight)
             };
 
             var copyRightState = layer.stateMachine.AddState("Copy Gesture Weight (Right)", new Vector3(500, 160, 0));
             copyRightState.writeDefaultValues = false; copyRightState.motion = blankAnimationClip;
             copyRightState.behaviours = new StateMachineBehaviour[]
             {
-                CreateVRCAvatarParameterLocalCopyDriver(VRCParameters.GESTURE_RIGHT_WEIGHT, SyncParameters.FixedWeight)
+                CreateVRCAvatarParameterLocalCopyDriver(VRCParameters.GESTURE_RIGHT_WEIGHT, SyncParameters.LockedFacialExpressionWeight)
             };
 
             AnimatorTransitionUtil.AddTransition(initialState, unlockState)

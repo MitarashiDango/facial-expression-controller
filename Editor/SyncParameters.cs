@@ -9,8 +9,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// 現在の動作モード
         /// </summary>
         /// <value>
-        /// 取りうる値は <see cref="FacialExpressionControlModeType"/> を参照<br />
-        /// 0 = Facial expression control inactive<br />
+        /// 取りうる値は <see cref="FacialExpressionModeType"/> を参照<br />
+        /// 0 = Facial expression controller inactive<br />
         /// 1 = Neutral<br />
         /// 2 = Left hand gesture<br />
         /// 3 = Left hand gesture (Fixed)<br />
@@ -20,11 +20,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// 7 = Dance Mode<br />
         /// 8 = AFK Mode<br />
         /// </value>
-        public static readonly Parameter FacialExpressionControlMode = new Parameter
+        public static readonly Parameter FacialExpressionMode = new Parameter
         {
-            name = "FEC/Sync/FacialExpressionControlMode",
+            name = "FEC/Sync/FacialExpressionMode",
             parameterType = UnityEngine.AnimatorControllerParameterType.Int,
-            defaultInt = FacialExpressionControlModeType.FacialExpressionControlInactive,
+            defaultInt = FacialExpressionModeType.Inactive,
             localOnly = false,
             saved = false,
         };
@@ -47,9 +47,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// 表情固定時のウェイト値
         /// </summary>
         /// <value>ウェイト値</value>
-        public static readonly Parameter FixedWeight = new Parameter
+        public static readonly Parameter LockedFacialExpressionWeight = new Parameter
         {
-            name = "FEC/Sync/FixedWeight",
+            name = "FEC/Sync/LockedFacialExpressionWeight",
             parameterType = UnityEngine.AnimatorControllerParameterType.Float,
             defaultFloat = 0,
             localOnly = false,

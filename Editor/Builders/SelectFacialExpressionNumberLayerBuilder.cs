@@ -7,9 +7,9 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 {
     public class SelectFacialExpressionNumberLayerBuilder : LayerBuilderBase
     {
-        private readonly FacialExpressionControl _fec;
+        private readonly FacialExpressionController _fec;
 
-        public SelectFacialExpressionNumberLayerBuilder(AnimationClip blankClip, FacialExpressionControl fec) : base(blankClip)
+        public SelectFacialExpressionNumberLayerBuilder(AnimationClip blankClip, FacialExpressionController fec) : base(blankClip)
         {
             _fec = fec;
         }
@@ -122,7 +122,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 }
             }
 
-            var selectedFacialExpressions = FacialExpressionControlBuildUtil.GetValidGroups(_fec)
+            var selectedFacialExpressions = FacialExpressionBuildUtil.GetValidGroups(_fec)
                 .SelectMany(x => x.facialExpressions)
                 .Select((v, i) => new { v, i })
                 .GroupBy(x => x.i / FacialExpressionNumbering.StateGroupSize)
