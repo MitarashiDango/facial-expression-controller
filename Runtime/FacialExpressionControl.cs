@@ -53,5 +53,15 @@ namespace MitarashiDango.FacialExpressionController
         /// AFK終了モーション待機パラメーター条件 (待機方法がパラメーターによる制御の場合のみ有効)
         /// </summary>
         public List<AFKExitMotionWaitParameterCondition> afkExitMotionWaitParameterConditions = new List<AFKExitMotionWaitParameterCondition>();
+
+        /// <summary>
+        /// アニメーションレイヤー削除機能を利用するかどうか (true: する, false: しない)
+        /// </summary>
+        public bool removeExistingFacialExpressionLayers = false;
+
+        /// <summary>
+        /// 削除対象レイヤー情報
+        /// </summary>
+        public List<AnimatorLayerRemovalTarget> layersToRemove = new List<AnimatorLayerRemovalTarget>();
     }
 }

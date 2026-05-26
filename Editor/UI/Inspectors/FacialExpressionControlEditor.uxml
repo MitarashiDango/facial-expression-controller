@@ -19,6 +19,12 @@
             <uie:PropertyField label="表情ロック用Contact Receiver" binding-path="facialExpressionLockContactReceiver" name="facial-expression-lock-contact-receiver" />
         </ui:VisualElement>
     </ui:Foldout>
+    <ui:Foldout text="既存表情レイヤー削除設定" value="false">
+        <ui:VisualElement>
+            <uie:PropertyField label="既存の表情制御レイヤーを削除する" binding-path="removeExistingFacialExpressionLayers" name="remove-existing-facial-expression-layers" />
+            <ui:ListView show-border="true" virtualization-method="DynamicHeight" show-foldout-header="true" show-add-remove-footer="true" reorder-mode="Animated" header-title="削除対象レイヤー" binding-path="layersToRemove" name="layers-to-remove" />
+        </ui:VisualElement>
+    </ui:Foldout>
     <ui:Foldout text="AFK設定" value="true">
         <ui:VisualElement>
             <uie:PropertyField label="AFKモードを使用する" binding-path="useAFKMode" name="use-afk-mode" />

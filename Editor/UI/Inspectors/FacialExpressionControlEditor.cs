@@ -16,6 +16,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private VisualElement _afkExitMotionWaitModeField;
         private VisualElement _afkExitMotionWaitDurationField;
         private VisualElement _afkExitMotionWaitParameterConditions;
+        private VisualElement _layersToRemoveField;
         private HelpBox _transitionTimeWarning;
 
         public override VisualElement CreateInspectorGUI()
@@ -36,6 +37,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _afkExitMotionWaitModeField = root.Q("afk-exit-motion-wait-mode");
             _afkExitMotionWaitDurationField = root.Q("afk-exit-motion-wait-duration");
             _afkExitMotionWaitParameterConditions = root.Q("afk-exit-motion-wait-parameter-conditions");
+            _layersToRemoveField = root.Q("layers-to-remove");
             _transitionTimeWarning = root.Q<HelpBox>("transition-time-warning");
 
             // SerializedProperty参照の取得
@@ -43,17 +45,20 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var useAFKModeProp = serializedObject.FindProperty("useAFKMode");
             var afkExitMotionWaitModeProp = serializedObject.FindProperty("afkExitMotionWaitMode");
             var transitionTimeProp = serializedObject.FindProperty("transitionTime");
+            var removeExistingFacialExpressionLayersProp = serializedObject.FindProperty("removeExistingFacialExpressionLayers");
 
             // プロパティ変更の監視
             root.TrackPropertyValue(generateDefaultProp, _ => UpdateDefaultFaceVisibility(generateDefaultProp));
             root.TrackPropertyValue(useAFKModeProp, _ => UpdateAFKFieldsVisibility(useAFKModeProp, afkExitMotionWaitModeProp));
             root.TrackPropertyValue(afkExitMotionWaitModeProp, _ => UpdateAFKFieldsVisibility(useAFKModeProp, afkExitMotionWaitModeProp));
             root.TrackPropertyValue(transitionTimeProp, _ => UpdateTransitionTimeValidation(transitionTimeProp));
+            root.TrackPropertyValue(removeExistingFacialExpressionLayersProp, _ => UpdateLayersToRemoveVisibility(removeExistingFacialExpressionLayersProp));
 
             // 初期表示状態の設定
             UpdateDefaultFaceVisibility(generateDefaultProp);
             UpdateAFKFieldsVisibility(useAFKModeProp, afkExitMotionWaitModeProp);
             UpdateTransitionTimeValidation(transitionTimeProp);
+            UpdateLayersToRemoveVisibility(removeExistingFacialExpressionLayersProp);
 
             return root;
         }
@@ -76,6 +81,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private void UpdateTransitionTimeValidation(SerializedProperty transitionTimeProp)
         {
             _transitionTimeWarning?.EnableInClassList("hidden", transitionTimeProp.floatValue >= 0);
+        }
+
+        private void UpdateLayersToRemoveVisibility(SerializedProperty removeExistingFacialExpressionLayersProp)
+        {
+            _layersToRemoveField?.EnableInClassList("hidden", !removeExistingFacialExpressionLayersProp.boolValue);
         }
     }
 }
