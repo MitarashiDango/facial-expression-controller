@@ -3,7 +3,7 @@ using System;
 namespace MitarashiDango.FacialExpressionController
 {
     [Serializable]
-    public class AFKExitMotionWaitParameterCondition
+    public class AFKExitWaitParameterCondition
     {
         /// <summary>
         /// 条件判定対象のパラメーター名

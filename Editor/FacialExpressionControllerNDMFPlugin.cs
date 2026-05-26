@@ -31,7 +31,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void GeneratingProcess(BuildContext ctx)
         {
-            var fecs = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControl>(true);
+            var fecs = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionController>(true);
             if (fecs.Length == 0)
             {
                 DestroyComponents(ctx);
@@ -41,7 +41,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             if (fecs.Length > 1)
             {
                 var paths = string.Join(", ", fecs.Select(f => MiscUtil.GetPathInHierarchy(f.gameObject, ctx.AvatarRootObject)));
-                Debug.LogWarning($"[FacialExpressionController] Multiple FacialExpressionControl components were detected. Only the first one will be processed. Detected at: {paths}");
+                Debug.LogWarning($"[FacialExpressionController] Multiple FacialExpressionController components were detected. Only the first one will be processed. Detected at: {paths}");
             }
 
             var fec = fecs[0];
@@ -56,7 +56,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             CreateAnimatorControllerProcess(ctx, fec);
             SetupContactReceiver(fec);
 
-            var fecMenus = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControlMenu>(true);
+            var fecMenus = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionMenuRoot>(true);
             foreach (var fecMenu in fecMenus)
             {
                 BuildMenuTree(fec, fecMenu);
@@ -65,7 +65,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void TransformingProcess(BuildContext ctx)
         {
-            var fecs = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControl>(true);
+            var fecs = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionController>(true);
             if (fecs.Length == 0)
             {
                 DestroyComponents(ctx);
@@ -75,7 +75,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             if (fecs.Length > 1)
             {
                 var paths = string.Join(", ", fecs.Select(f => MiscUtil.GetPathInHierarchy(f.gameObject, ctx.AvatarRootObject)));
-                Debug.LogWarning($"[FacialExpressionController] Multiple FacialExpressionControl components were detected. Only the first one will be processed. Detected at: {paths}");
+                Debug.LogWarning($"[FacialExpressionController] Multiple FacialExpressionController components were detected. Only the first one will be processed. Detected at: {paths}");
             }
 
             RemoveLayers(ctx, fecs[0]);
@@ -83,9 +83,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             DestroyComponents(ctx);
         }
 
-        private void RemoveLayers(BuildContext ctx, FacialExpressionControl fec)
+        private void RemoveLayers(BuildContext ctx, FacialExpressionController fec)
         {
-            if (fec == null || !fec.removeExistingFacialExpressionLayers || fec.layersToRemove == null || fec?.layersToRemove.Count == 0)
+            if (fec == null || !fec.removeExistingFacialExpressionLayers || fec.layerRemovalTargets == null || fec?.layerRemovalTargets.Count == 0)
             {
                 return;
             }
@@ -93,7 +93,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var asc = ctx.Extension<AnimatorServicesContext>();
             var avatarDescriptor = ctx.AvatarRootObject.GetComponent<VRCAvatarDescriptor>();
 
-            foreach (var removalTarget in fec.layersToRemove)
+            foreach (var removalTarget in fec.layerRemovalTargets)
             {
                 if (string.IsNullOrEmpty(removalTarget.layerName))
                 {
@@ -148,10 +148,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 .FirstOrDefault();
         }
 
-        private bool ValidateFacialExpressionCount(FacialExpressionControl fec)
+        private bool ValidateFacialExpressionCount(FacialExpressionController fec)
         {
             var gestureMaxNumber = fec.facialExpressionGesturePresets.Count * FacialExpressionNumbering.GestureCountPerPreset;
-            var menuMaxNumber = FacialExpressionControlBuildUtil.GetValidGroups(fec)
+            var menuMaxNumber = FacialExpressionBuildUtil.GetValidGroups(fec)
                 .Sum(g => g.facialExpressions.Count);
 
             var valid = true;
@@ -173,37 +173,37 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void DestroyComponents(BuildContext ctx)
         {
-            var facialExpressionControls = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControl>(true);
-            foreach (var facialExpressionControl in facialExpressionControls)
+            var facialExpressionControllers = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionController>(true);
+            foreach (var facialExpressionController in facialExpressionControllers)
             {
-                Object.DestroyImmediate(facialExpressionControl);
+                Object.DestroyImmediate(facialExpressionController);
             }
 
-            var facialExpressionControlMenus = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControlMenu>(true);
-            foreach (var facialExpressionControlMenu in facialExpressionControlMenus)
+            var facialExpressionMenuRoots = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionMenuRoot>(true);
+            foreach (var facialExpressionMenuRoot in facialExpressionMenuRoots)
             {
-                Object.DestroyImmediate(facialExpressionControlMenu);
+                Object.DestroyImmediate(facialExpressionMenuRoot);
             }
         }
 
-        private void CreateMAParameters(FacialExpressionControl fec)
+        private void CreateMAParameters(FacialExpressionController fec)
         {
             var parameters = new Parameters();
             var modularAvatarParameters = fec.gameObject.AddComponent<ModularAvatarParameters>();
             modularAvatarParameters.parameters = parameters.CreateNDMFParameterConfigs();
         }
 
-        private void CreateAnimatorControllerProcess(BuildContext ctx, FacialExpressionControl fec)
+        private void CreateAnimatorControllerProcess(BuildContext ctx, FacialExpressionController fec)
         {
             CreateMainAnimatorController(fec);
 
-            if (fec.defaultFace != null || fec.generateDefaultFacialAnimation)
+            if (fec.defaultFacialExpressionMotion != null || fec.generateDefaultFacialExpressionAnimation)
             {
                 CreateDefaultFacialExpressionAnimatorController(ctx, fec);
             }
         }
 
-        private void SetupContactReceiver(FacialExpressionControl fec)
+        private void SetupContactReceiver(FacialExpressionController fec)
         {
             var contactReceiver = fec.facialExpressionLockContactReceiver;
             if (contactReceiver != null)
@@ -213,9 +213,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
         }
 
-        private void CreateMainAnimatorController(FacialExpressionControl fec)
+        private void CreateMainAnimatorController(FacialExpressionController fec)
         {
-            var builder = new FacialExpressionControlAnimatorControllerBuilder();
+            var builder = new FacialExpressionAnimatorControllerBuilder();
             var ac = builder.CreateMainAnimatorController(fec);
 
             var mergeAnimator = fec.gameObject.AddComponent<ModularAvatarMergeAnimator>();
@@ -225,9 +225,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             mergeAnimator.matchAvatarWriteDefaults = matchAvatarWriteDefaults;
         }
 
-        private void CreateDefaultFacialExpressionAnimatorController(BuildContext ctx, FacialExpressionControl fec)
+        private void CreateDefaultFacialExpressionAnimatorController(BuildContext ctx, FacialExpressionController fec)
         {
-            var builder = new FacialExpressionControlAnimatorControllerBuilder();
+            var builder = new FacialExpressionAnimatorControllerBuilder();
             var ac = builder.CreateDefaultFacialExpressionAnimatorController(ctx, fec);
 
             var mergeAnimator = fec.gameObject.AddComponent<ModularAvatarMergeAnimator>();
@@ -238,9 +238,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             mergeAnimator.layerPriority = defaultFacialExpressionLayerPriority;    // デフォルトレイヤーは優先度を下げる
         }
 
-        private void BuildMenuTree(FacialExpressionControl fec, FacialExpressionControlMenu fecMenu)
+        private void BuildMenuTree(FacialExpressionController fec, FacialExpressionMenuRoot fecMenu)
         {
-            var menuBuilder = new FacialExpressionControlMenuBuilder();
+            var menuBuilder = new FacialExpressionMenuBuilder();
             menuBuilder.BuildMenuTree(fec, fecMenu);
         }
     }

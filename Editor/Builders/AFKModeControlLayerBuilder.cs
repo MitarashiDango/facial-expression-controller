@@ -7,9 +7,9 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 {
     public class AFKModeControlLayerBuilder : LayerBuilderBase
     {
-        private readonly FacialExpressionControl _fec;
+        private readonly FacialExpressionController _fec;
 
-        public AFKModeControlLayerBuilder(AnimationClip blankClip, FacialExpressionControl fec) : base(blankClip)
+        public AFKModeControlLayerBuilder(AnimationClip blankClip, FacialExpressionController fec) : base(blankClip)
         {
             _fec = fec;
         }
@@ -66,13 +66,13 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             var switchToAFKInactiveTransition = AnimatorTransitionUtil.AddTransition(switchToAFKInactiveState, afkInactiveState)
                 .IfNot(VRCParameters.AFK);
 
-            if (_fec.afkExitMotionWaitMode == AFKExitMotionWaitMode.Duration && _fec.afkExitMotionWaitDuration > 0)
+            if (_fec.afkExitWaitMode == AFKExitWaitMode.Duration && _fec.afkExitWaitDuration > 0)
             {
                 switchToAFKInactiveTransition.Exec((builder) =>
                 {
                     var transition = builder.Transition;
                     transition.hasExitTime = true;
-                    transition.exitTime = _fec.afkExitMotionWaitDuration;
+                    transition.exitTime = _fec.afkExitWaitDuration;
                     transition.hasFixedDuration = true;
                     transition.duration = 0;
                     transition.offset = 0;
@@ -80,11 +80,11 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                     transition.orderedInterruption = true;
                 });
             }
-            else if (_fec.afkExitMotionWaitMode == AFKExitMotionWaitMode.Parameter
-                && _fec.afkExitMotionWaitParameterConditions != null
+            else if (_fec.afkExitWaitMode == AFKExitWaitMode.Parameter
+                && _fec.afkExitWaitConditions != null
                 && HasValidParameterConditions())
             {
-                foreach (var condition in _fec.afkExitMotionWaitParameterConditions)
+                foreach (var condition in _fec.afkExitWaitConditions)
                 {
                     if (condition == null || string.IsNullOrEmpty(condition.parameterName))
                     {
@@ -130,7 +130,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
         private bool HasValidParameterConditions()
         {
-            return _fec.afkExitMotionWaitParameterConditions
+            return _fec.afkExitWaitConditions
                 .Any(c => c != null && !string.IsNullOrEmpty(c.parameterName));
         }
     }

@@ -8,9 +8,9 @@ using VRC.SDK3.Avatars.ScriptableObjects;
 
 namespace MitarashiDango.FacialExpressionController.Editor
 {
-    public class FacialExpressionControlMenuBuilder
+    public class FacialExpressionMenuBuilder
     {
-        public void BuildMenuTree(FacialExpressionControl fec, FacialExpressionControlMenu fecMenu)
+        public void BuildMenuTree(FacialExpressionController fec, FacialExpressionMenuRoot fecMenu)
         {
             var menuRootObject = fecMenu.gameObject;
 
@@ -18,8 +18,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             maMenuItem.MenuSource = SubmenuSource.Children;
             maMenuItem.Control.type = VRCExpressionsMenu.Control.ControlType.SubMenu;
 
-            var facialExpressionControlOnToggle = CreateFacialExpressionControlOnToggle();
-            facialExpressionControlOnToggle.transform.SetParent(menuRootObject.transform);
+            var facialExpressionControllerEnabledToggle = CreateFacialExpressionControllerEnabledToggle();
+            facialExpressionControllerEnabledToggle.transform.SetParent(menuRootObject.transform);
 
             var facialLockOnToggle = CreateFacialLockOnToggle();
             facialLockOnToggle.transform.SetParent(menuRootObject.transform);
@@ -34,9 +34,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             configSubMenu.transform.SetParent(menuRootObject.transform);
         }
 
-        private GameObject CreateFacialExpressionControlOnToggle()
+        private GameObject CreateFacialExpressionControllerEnabledToggle()
         {
-            var go = new GameObject("表情コントロールON");
+            var go = new GameObject("表情制御");
 
             var maMenuItem = go.AddComponent<ModularAvatarMenuItem>();
             var control = new VRCExpressionsMenu.Control()
@@ -44,7 +44,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 type = VRCExpressionsMenu.Control.ControlType.Toggle,
                 parameter = new VRCExpressionsMenu.Control.Parameter()
                 {
-                    name = InternalParameters.FacialExpressionControlON.name,
+                    name = InternalParameters.FacialExpressionControllerEnabled.name,
                 },
                 value = 1,
             };
@@ -56,7 +56,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private GameObject CreateFacialLockOnToggle()
         {
-            var go = new GameObject("表情ロックON");
+            var go = new GameObject("表情ロック");
 
             var maMenuItem = go.AddComponent<ModularAvatarMenuItem>();
             var control = new VRCExpressionsMenu.Control()
@@ -86,7 +86,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 {
                     new VRCExpressionsMenu.Control.Parameter()
                     {
-                        name = SyncParameters.FixedWeight.name,
+                        name = SyncParameters.LockedFacialExpressionWeight.name,
                     },
                 },
                 value = 1.0f,
@@ -97,9 +97,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return go;
         }
 
-        private GameObject CreateConfigSubMenu(FacialExpressionControl fec)
+        private GameObject CreateConfigSubMenu(FacialExpressionController fec)
         {
-            var subMenu = CreateSubMenu("Config", null);
+            var subMenu = CreateSubMenu("設定", null);
 
             var selectGesturePrioritySubMenu = CreateSelectGesturePrioritySubMenu();
             selectGesturePrioritySubMenu.transform.SetParent(subMenu.transform);
@@ -121,7 +121,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private GameObject CreateContactLockOnToggle()
         {
-            var go = new GameObject("Contact Lock ON");
+            var go = new GameObject("接触ロック");
 
             var maMenuItem = go.AddComponent<ModularAvatarMenuItem>();
             var control = new VRCExpressionsMenu.Control()
@@ -129,7 +129,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 type = VRCExpressionsMenu.Control.ControlType.Toggle,
                 parameter = new VRCExpressionsMenu.Control.Parameter()
                 {
-                    name = InternalParameters.ContactLockON.name,
+                    name = InternalParameters.ContactLockEnabled.name,
                 },
                 value = 1,
             };
@@ -141,7 +141,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private GameObject CreateSwitchToDanceModeOnToggle()
         {
-            var go = new GameObject("ダンスモードへの自動切り替えON");
+            var go = new GameObject("ダンスモード自動切り替え");
 
             var maMenuItem = go.AddComponent<ModularAvatarMenuItem>();
             var control = new VRCExpressionsMenu.Control()
@@ -149,7 +149,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 type = VRCExpressionsMenu.Control.ControlType.Toggle,
                 parameter = new VRCExpressionsMenu.Control.Parameter()
                 {
-                    name = InternalParameters.SwitchToDanceModeON.name,
+                    name = InternalParameters.DanceModeAutoSwitchEnabled.name,
                 },
                 value = 1,
             };
@@ -161,7 +161,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private GameObject CreateSwitchToVehicleModeOnToggle()
         {
-            var go = new GameObject("乗り物モードへの自動切り替えON");
+            var go = new GameObject("乗り物モード自動切り替え");
 
             var maMenuItem = go.AddComponent<ModularAvatarMenuItem>();
             var control = new VRCExpressionsMenu.Control()
@@ -169,7 +169,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 type = VRCExpressionsMenu.Control.ControlType.Toggle,
                 parameter = new VRCExpressionsMenu.Control.Parameter()
                 {
-                    name = InternalParameters.SwitchToVehicleModeON.name,
+                    name = InternalParameters.VehicleModeAutoSwitchEnabled.name,
                 },
                 value = 1,
             };
@@ -179,20 +179,20 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return go;
         }
 
-        private GameObject CreateSelectGesturePresetSubMenu(FacialExpressionControl fec)
+        private GameObject CreateSelectGesturePresetSubMenu(FacialExpressionController fec)
         {
             var subMenu = CreateSubMenu("ジェスチャープリセット割り当て", null);
 
-            var selectLeftHandGesutePresetSubMenu = CreateSelectLeftHandGesturePresetSubMenu(fec);
-            selectLeftHandGesutePresetSubMenu.transform.SetParent(subMenu.transform);
+            var selectLeftHandGesturePresetSubMenu = CreateSelectLeftHandGesturePresetSubMenu(fec);
+            selectLeftHandGesturePresetSubMenu.transform.SetParent(subMenu.transform);
 
-            var selectRightHandGesutePresetSubMenu = CreateSelectRightHandGesturePresetSubMenu(fec);
-            selectRightHandGesutePresetSubMenu.transform.SetParent(subMenu.transform);
+            var selectRightHandGesturePresetSubMenu = CreateSelectRightHandGesturePresetSubMenu(fec);
+            selectRightHandGesturePresetSubMenu.transform.SetParent(subMenu.transform);
 
             return subMenu;
         }
 
-        private GameObject CreateSelectLeftHandGesturePresetSubMenu(FacialExpressionControl fec)
+        private GameObject CreateSelectLeftHandGesturePresetSubMenu(FacialExpressionController fec)
         {
             var subMenu = CreateSubMenu("左手", null);
 
@@ -205,7 +205,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return subMenu;
         }
 
-        private GameObject CreateSelectRightHandGesturePresetSubMenu(FacialExpressionControl fec)
+        private GameObject CreateSelectRightHandGesturePresetSubMenu(FacialExpressionController fec)
         {
             var subMenu = CreateSubMenu("右手", null);
 
@@ -275,7 +275,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return subMenu;
         }
 
-        private GameObject CreateSelectFacialExpressionSubMenu(FacialExpressionControl fec)
+        private GameObject CreateSelectFacialExpressionSubMenu(FacialExpressionController fec)
         {
             var subMenu = CreateSubMenu("表情選択", null);
 
@@ -283,7 +283,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             noFacialExpressionSelectionToggle.transform.SetParent(subMenu.transform);
 
             var facialExpressionNumber = 1;
-            foreach (var (facialExpressionGroup, i) in FacialExpressionControlBuildUtil.GetValidGroups(fec).Select((v, i) => (v, i)))
+            foreach (var (facialExpressionGroup, i) in FacialExpressionBuildUtil.GetValidGroups(fec).Select((v, i) => (v, i)))
             {
                 var groupName = string.IsNullOrEmpty(facialExpressionGroup.groupName) ? $"グループ {(i + 1).ToString()}" : facialExpressionGroup.groupName;
 

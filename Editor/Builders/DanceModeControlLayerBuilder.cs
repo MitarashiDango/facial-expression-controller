@@ -29,14 +29,14 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             // [Initial State] -> [Dance Mode Inactive]
             AnimatorTransitionUtil.AddTransition(initialState, inactiveState)
                 .If(VRCParameters.IS_LOCAL)
-                .IfNot(InternalParameters.SwitchToDanceModeON)
+                .IfNot(InternalParameters.DanceModeAutoSwitchEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Initial State] -> [Dance Mode Inactive]
             // 表情コントロールがOFFになっている場合
             AnimatorTransitionUtil.AddTransition(initialState, inactiveState)
                 .If(VRCParameters.IS_LOCAL)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Initial State] -> [Dance Mode Inactive]
@@ -69,8 +69,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             // [Initial State] -> [Dance Mode Active]
             AnimatorTransitionUtil.AddTransition(initialState, activeState)
                 .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.SwitchToDanceModeON)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.DanceModeAutoSwitchEnabled)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .If(VRCParameters.IN_STATION)
                 .IfNot(VRCParameters.SEATED)
                 .IfNot(InternalParameters.State_AFKModeActive)
@@ -78,8 +78,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             // [Dance Mode Inactive] -> [Dance Mode Active]
             AnimatorTransitionUtil.AddTransition(inactiveState, activeState)
-                .If(InternalParameters.SwitchToDanceModeON)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.DanceModeAutoSwitchEnabled)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .If(VRCParameters.IN_STATION)
                 .IfNot(VRCParameters.SEATED)
                 .IfNot(InternalParameters.State_AFKModeActive)
@@ -87,13 +87,13 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             // [Dance Mode Active] -> [Dance Mode Inactive]
             AnimatorTransitionUtil.AddTransition(activeState, inactiveState)
-                .IfNot(InternalParameters.SwitchToDanceModeON)
+                .IfNot(InternalParameters.DanceModeAutoSwitchEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Dance Mode Active] -> [Dance Mode Inactive]
             // 表情コントロールがOFFになっている場合
             AnimatorTransitionUtil.AddTransition(activeState, inactiveState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Dance Mode Active] -> [Dance Mode Inactive]

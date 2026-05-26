@@ -60,47 +60,47 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             // [Initial State] -> [Inactive]
             AnimatorTransitionUtil.AddTransition(initialState, inactiveState)
                 .If(VRCParameters.IS_LOCAL)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Gesture Lock Disabled] -> [Inactive]
             AnimatorTransitionUtil.AddTransition(gestureLockDisabledState, inactiveState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Gesture Lock Enabled] -> [Inactive]
             AnimatorTransitionUtil.AddTransition(gestureLockEnabledState, inactiveState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Set Disable] -> [Inactive]
             AnimatorTransitionUtil.AddTransition(setDisableState, inactiveState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Set Enable] -> [Inactive]
             AnimatorTransitionUtil.AddTransition(setEnableState, inactiveState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Interval (Lock to Unlock)] -> [Inactive]
             AnimatorTransitionUtil.AddTransition(lockToUnlockIntervalState, inactiveState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Interval (Unlock to Lock)] -> [Inactive]
             AnimatorTransitionUtil.AddTransition(unlockToLockIntervalState, inactiveState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Inactive] -> [Gesture Lock Disabled]
             AnimatorTransitionUtil.AddTransition(inactiveState, gestureLockDisabledState)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Inactive] -> [Gesture Lock Enabled]
             AnimatorTransitionUtil.AddTransition(inactiveState, gestureLockEnabledState)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             // [Initial State] -> [Gesture Lock Disabled]
@@ -133,7 +133,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             //     - InStation = falseな状態が保証されているため、Sit判定時のロック機能自動無効化の状態についてはチェックを行わない
             AnimatorTransitionUtil.AddTransition(gestureLockDisabledState, setEnableState)
                 .If(InternalParameters.FacialExpressionLockReceiverInContact)
-                .If(InternalParameters.ContactLockON)
+                .If(InternalParameters.ContactLockEnabled)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .IfNot(VRCParameters.IN_STATION)
@@ -144,10 +144,10 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             //   - InStation = true かつ Seated = falseの時はロック機能自動無効化がOFFの場合でもロック状態の切り替えを行わないようにする(いわゆるダンスワールドでのアニメーション適用時など)
             AnimatorTransitionUtil.AddTransition(gestureLockDisabledState, setEnableState)
                 .If(InternalParameters.FacialExpressionLockReceiverInContact)
-                .If(InternalParameters.ContactLockON)
+                .If(InternalParameters.ContactLockEnabled)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
-                .IfNot(InternalParameters.SwitchToVehicleModeON)
+                .IfNot(InternalParameters.VehicleModeAutoSwitchEnabled)
                 .If(VRCParameters.IN_STATION)
                 .If(VRCParameters.SEATED)
                 .SetImmediateTransitionSettings();
@@ -160,7 +160,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             //     - InStation = falseな状態が保証されているため、Sit判定時のロック機能自動無効化の状態についてはチェックを行わない
             AnimatorTransitionUtil.AddTransition(gestureLockEnabledState, setDisableState)
                 .If(InternalParameters.FacialExpressionLockReceiverInContact)
-                .If(InternalParameters.ContactLockON)
+                .If(InternalParameters.ContactLockEnabled)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .IfNot(VRCParameters.IN_STATION)
@@ -171,10 +171,10 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             //   - InStation = true かつ Seated = falseの時はロック機能自動無効化がOFFの場合でもロック状態の切り替えを行わないようにする(いわゆるダンスワールドでのアニメーション適用時など)
             AnimatorTransitionUtil.AddTransition(gestureLockEnabledState, setDisableState)
                 .If(InternalParameters.FacialExpressionLockReceiverInContact)
-                .If(InternalParameters.ContactLockON)
+                .If(InternalParameters.ContactLockEnabled)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
-                .IfNot(InternalParameters.SwitchToVehicleModeON)
+                .IfNot(InternalParameters.VehicleModeAutoSwitchEnabled)
                 .If(VRCParameters.IN_STATION)
                 .If(VRCParameters.SEATED)
                 .SetImmediateTransitionSettings();

@@ -27,12 +27,12 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             AnimatorTransitionUtil.AddTransition(initialState, inactiveState)
                 .If(VRCParameters.IS_LOCAL)
-                .IfNot(InternalParameters.SwitchToVehicleModeON)
+                .IfNot(InternalParameters.VehicleModeAutoSwitchEnabled)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddTransition(initialState, inactiveState)
                 .If(VRCParameters.IS_LOCAL)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddTransition(initialState, inactiveState)
@@ -60,27 +60,27 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             AnimatorTransitionUtil.AddTransition(initialState, activeState)
                 .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.SwitchToVehicleModeON)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.VehicleModeAutoSwitchEnabled)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .If(VRCParameters.IN_STATION)
                 .If(VRCParameters.SEATED)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddTransition(inactiveState, activeState)
-                .If(InternalParameters.SwitchToVehicleModeON)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.VehicleModeAutoSwitchEnabled)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .If(VRCParameters.IN_STATION)
                 .If(VRCParameters.SEATED)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddTransition(activeState, inactiveState)
-                .IfNot(InternalParameters.SwitchToVehicleModeON)
+                .IfNot(InternalParameters.VehicleModeAutoSwitchEnabled)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddTransition(activeState, inactiveState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddTransition(activeState, inactiveState)

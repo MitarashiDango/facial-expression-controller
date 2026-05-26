@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace MitarashiDango.FacialExpressionController
 {
-    public enum AFKExitMotionWaitMode
+    public enum AFKExitWaitMode
     {
         [InspectorName("待機なし")]
         None,

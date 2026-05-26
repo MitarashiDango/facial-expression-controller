@@ -3,9 +3,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
     /// <summary>
     /// 動作モード定義
     /// </summary>
-    public class FacialExpressionControlModeType
+    public class FacialExpressionModeType
     {
-        public static readonly int FacialExpressionControlInactive = 0;
+        public static readonly int Inactive = 0;
         public static readonly int Neutral = 1;
         public static readonly int LeftHandGesture = 2;
         public static readonly int LeftHandGestureFixed = 3;

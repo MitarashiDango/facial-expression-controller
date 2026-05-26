@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace MitarashiDango.FacialExpressionController.Editor.Builders
 {
-    public class SelectFacialExpressionControlModeLayerBuilder : LayerBuilderBase
+    public class SelectFacialExpressionModeLayerBuilder : LayerBuilderBase
     {
         /// <summary>
         /// 左右ハンドジェスチャー用ステートの生成パラメーター
@@ -18,13 +18,13 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             public Vector3 Position;
         }
 
-        public SelectFacialExpressionControlModeLayerBuilder(AnimationClip blankClip) : base(blankClip)
+        public SelectFacialExpressionModeLayerBuilder(AnimationClip blankClip) : base(blankClip)
         {
         }
 
         public override AnimatorControllerLayer Build()
         {
-            var layer = CreateAnimatorControllerLayer("FEC_SELECT_FACIAL_EXPRESSION_CONTROL_MODE");
+            var layer = CreateAnimatorControllerLayer("FEC_SELECT_FACIAL_EXPRESSION_MODE");
 
             layer.stateMachine.entryPosition = AnimatorLayout.DefaultEntryPosition;
             layer.stateMachine.exitPosition = new Vector3(600, 440, 0);
@@ -42,7 +42,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 new HandGestureStateSpec
                 {
                     StateName = "Left Hand Gesture",
-                    ModeType = FacialExpressionControlModeType.LeftHandGesture,
+                    ModeType = FacialExpressionModeType.LeftHandGesture,
                     HandValue = 1,
                     CurrentGestureParameter = InternalParameters.State_CurrentGestureLeft,
                     IsFixed = false,
@@ -51,7 +51,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 new HandGestureStateSpec
                 {
                     StateName = "Left Hand Gesture (Fixed)",
-                    ModeType = FacialExpressionControlModeType.LeftHandGestureFixed,
+                    ModeType = FacialExpressionModeType.LeftHandGestureFixed,
                     HandValue = 1,
                     CurrentGestureParameter = InternalParameters.State_CurrentGestureLeft,
                     IsFixed = true,
@@ -60,7 +60,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 new HandGestureStateSpec
                 {
                     StateName = "Right Hand Gesture",
-                    ModeType = FacialExpressionControlModeType.RightHandGesture,
+                    ModeType = FacialExpressionModeType.RightHandGesture,
                     HandValue = 2,
                     CurrentGestureParameter = InternalParameters.State_CurrentGestureRight,
                     IsFixed = false,
@@ -69,7 +69,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 new HandGestureStateSpec
                 {
                     StateName = "Right Hand Gesture (Fixed)",
-                    ModeType = FacialExpressionControlModeType.RightHandGestureFixed,
+                    ModeType = FacialExpressionModeType.RightHandGestureFixed,
                     HandValue = 2,
                     CurrentGestureParameter = InternalParameters.State_CurrentGestureRight,
                     IsFixed = true,
@@ -96,33 +96,33 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             state.motion = blankAnimationClip;
             state.behaviours = new StateMachineBehaviour[]
             {
-                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionControlMode, modeType),
+                CreateVRCAvatarParameterLocalSetDriver(SyncParameters.FacialExpressionMode, modeType),
             };
             return state;
         }
 
         private void AddInactiveState(AnimatorStateMachine stateMachine, AnimatorState initialState)
         {
-            var inactiveState = CreateModeState(stateMachine, "Inactive", FacialExpressionControlModeType.FacialExpressionControlInactive, new Vector3(300, 80, 0));
+            var inactiveState = CreateModeState(stateMachine, "Inactive", FacialExpressionModeType.Inactive, new Vector3(300, 80, 0));
 
             AnimatorTransitionUtil.AddTransition(initialState, inactiveState)
                 .If(VRCParameters.IS_LOCAL)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(inactiveState)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
         }
 
         private void AddNeutralState(AnimatorStateMachine stateMachine, AnimatorState initialState)
         {
-            var neutralState = CreateModeState(stateMachine, "Neutral", FacialExpressionControlModeType.Neutral, new Vector3(300, 160, 0));
+            var neutralState = CreateModeState(stateMachine, "Neutral", FacialExpressionModeType.Neutral, new Vector3(300, 160, 0));
 
             // 左右どちらの手のジェスチャーも適用されていないパターン (Neutral)
             AnimatorTransitionUtil.AddTransition(initialState, neutralState)
                 .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -136,7 +136,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
                 AnimatorTransitionUtil.AddTransition(initialState, neutralState)
                     .If(VRCParameters.IS_LOCAL)
-                    .If(InternalParameters.FacialExpressionControlON)
+                    .If(InternalParameters.FacialExpressionControllerEnabled)
                     .IfNot(InternalParameters.State_AFKModeActive)
                     .IfNot(InternalParameters.State_DanceModeActive)
                     .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -146,7 +146,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             }
 
             AnimatorTransitionUtil.AddExitTransition(neutralState)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(neutralState)
@@ -184,7 +184,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             // Entry
             var entryTransition = AnimatorTransitionUtil.AddTransition(initialState, state)
                 .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .Equals(InternalParameters.SelectedFacialExpressionInMenu, 0)
@@ -203,7 +203,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             // Exit - 共通 (Normal/Fixed 双方)
             AnimatorTransitionUtil.AddExitTransition(state)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(state)
@@ -251,18 +251,18 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
         private void AddSelectedFacialExpressionInMenuState(AnimatorStateMachine stateMachine, AnimatorState initialState)
         {
-            var state = CreateModeState(stateMachine, "Selected Facial Expression (In Menu)", FacialExpressionControlModeType.SelectedFacialExpressionInMenu, new Vector3(300, 560, 0));
+            var state = CreateModeState(stateMachine, "Selected Facial Expression (In Menu)", FacialExpressionModeType.SelectedFacialExpressionInMenu, new Vector3(300, 560, 0));
 
             AnimatorTransitionUtil.AddTransition(initialState, state)
                 .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
                 .NotEqual(InternalParameters.SelectedFacialExpressionInMenu, 0)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(state)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(state)
@@ -280,17 +280,17 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
         private void AddDanceModeState(AnimatorStateMachine stateMachine, AnimatorState initialState)
         {
-            var state = CreateModeState(stateMachine, "Dance Mode", FacialExpressionControlModeType.DanceMode, new Vector3(300, 640, 0));
+            var state = CreateModeState(stateMachine, "Dance Mode", FacialExpressionModeType.DanceMode, new Vector3(300, 640, 0));
 
             AnimatorTransitionUtil.AddTransition(initialState, state)
                 .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .If(InternalParameters.State_DanceModeActive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(state)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(state)
@@ -304,16 +304,16 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
         private void AddAfkState(AnimatorStateMachine stateMachine, AnimatorState initialState)
         {
-            var state = CreateModeState(stateMachine, "AFK", FacialExpressionControlModeType.AFKMode, new Vector3(300, 880, 0));
+            var state = CreateModeState(stateMachine, "AFK", FacialExpressionModeType.AFKMode, new Vector3(300, 880, 0));
 
             AnimatorTransitionUtil.AddTransition(initialState, state)
                 .If(VRCParameters.IS_LOCAL)
-                .If(InternalParameters.FacialExpressionControlON)
+                .If(InternalParameters.FacialExpressionControllerEnabled)
                 .If(InternalParameters.State_AFKModeActive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(state)
-                .IfNot(InternalParameters.FacialExpressionControlON)
+                .IfNot(InternalParameters.FacialExpressionControllerEnabled)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddExitTransition(state)

@@ -6,24 +6,24 @@ using VRC.SDKBase;
 namespace MitarashiDango.FacialExpressionController
 {
     [DisallowMultipleComponent]
-    [AddComponentMenu("Facial Expression Controller/Facial Expression Control")]
-    public class FacialExpressionControl : MonoBehaviour, IEditorOnly
+    [AddComponentMenu("Facial Expression Controller/Controller")]
+    public class FacialExpressionController : MonoBehaviour, IEditorOnly
     {
         /// <summary>
         /// 既定の表情をブレンドシェイプから自動生成するかどうか (true: する, false: しない)
         /// </summary>
-        public bool generateDefaultFacialAnimation;
+        public bool generateDefaultFacialExpressionAnimation;
 
         /// <summary>
         /// 既定の表情<br />
         /// 既定の表情をブレンドシェイプから自動生成する設定の場合、無視される
         /// </summary>
-        public Motion defaultFace;
+        public Motion defaultFacialExpressionMotion;
 
         /// <summary>
         /// 表情切り替え時間
         /// </summary>
-        public float transitionTime = 0.1f;
+        public float transitionDuration = 0.1f;
 
         public List<FacialExpressionGesturePreset> facialExpressionGesturePresets = new List<FacialExpressionGesturePreset>();
 
@@ -42,17 +42,17 @@ namespace MitarashiDango.FacialExpressionController
         /// <summary>
         /// AFK終了モーション待機方法 (AFKモードを使用する場合のみ有効)
         /// </summary>
-        public AFKExitMotionWaitMode afkExitMotionWaitMode = AFKExitMotionWaitMode.None;
+        public AFKExitWaitMode afkExitWaitMode = AFKExitWaitMode.None;
 
         /// <summary>
         /// AFK終了モーション待機時間 (待機方法が指定時間待機の場合のみ有効)
         /// </summary>
-        public float afkExitMotionWaitDuration = 0;
+        public float afkExitWaitDuration = 0;
 
         /// <summary>
         /// AFK終了モーション待機パラメーター条件 (待機方法がパラメーターによる制御の場合のみ有効)
         /// </summary>
-        public List<AFKExitMotionWaitParameterCondition> afkExitMotionWaitParameterConditions = new List<AFKExitMotionWaitParameterCondition>();
+        public List<AFKExitWaitParameterCondition> afkExitWaitConditions = new List<AFKExitWaitParameterCondition>();
 
         /// <summary>
         /// アニメーションレイヤー削除機能を利用するかどうか (true: する, false: しない)
@@ -62,6 +62,6 @@ namespace MitarashiDango.FacialExpressionController
         /// <summary>
         /// 削除対象レイヤー情報
         /// </summary>
-        public List<AnimatorLayerRemovalTarget> layersToRemove = new List<AnimatorLayerRemovalTarget>();
+        public List<AnimatorLayerRemovalTarget> layerRemovalTargets = new List<AnimatorLayerRemovalTarget>();
     }
 }

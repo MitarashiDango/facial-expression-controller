@@ -5,8 +5,8 @@ using UnityEngine.UIElements;
 
 namespace MitarashiDango.FacialExpressionController.Editor
 {
-    [CustomPropertyDrawer(typeof(AFKExitMotionWaitParameterCondition))]
-    public class AFKExitMotionWaitParameterConditionDrawer : PropertyDrawer
+    [CustomPropertyDrawer(typeof(AFKExitWaitParameterCondition))]
+    public class AFKExitWaitParameterConditionDrawer : PropertyDrawer
     {
         public override VisualElement CreatePropertyGUI(SerializedProperty property)
         {

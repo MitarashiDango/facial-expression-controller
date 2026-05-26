@@ -7,11 +7,11 @@ using VRC.SDKBase;
 
 namespace MitarashiDango.FacialExpressionController.Editor.Builders
 {
-    public class FacialExpressionControlLayerBuilder : LayerBuilderBase
+    public class ApplyFacialExpressionLayerBuilder : LayerBuilderBase
     {
-        private readonly FacialExpressionControl _fec;
+        private readonly FacialExpressionController _fec;
 
-        public FacialExpressionControlLayerBuilder(AnimationClip blankClip, FacialExpressionControl fec)
+        public ApplyFacialExpressionLayerBuilder(AnimationClip blankClip, FacialExpressionController fec)
             : base(blankClip)
         {
             _fec = fec;
@@ -19,7 +19,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
         public override AnimatorControllerLayer Build()
         {
-            var layer = CreateAnimatorControllerLayer("FEC_FACIAL_EXPRESSION_CONTROL", 1.0f);
+            var layer = CreateAnimatorControllerLayer("FEC_APPLY_FACIAL_EXPRESSION", 1.0f);
 
             layer.stateMachine.entryPosition = AnimatorLayout.DefaultEntryPosition;
             layer.stateMachine.exitPosition = new Vector3(1000, 300, 0);
@@ -66,53 +66,53 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             // =========================================================
 
             AnimatorTransitionUtil.AddEntryTransition(layer.stateMachine, inactiveState)
-                .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.FacialExpressionControlInactive);
+                .Equals(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Inactive);
 
             AnimatorTransitionUtil.AddExitTransition(inactiveState)
-                .NotEqual(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.FacialExpressionControlInactive)
+                .NotEqual(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Inactive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddEntryTransition(layer.stateMachine, neutralState)
-                .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.Neutral);
+                .Equals(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Neutral);
 
             AnimatorTransitionUtil.AddExitTransition(neutralState)
-                .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.FacialExpressionControlInactive)
+                .Equals(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Inactive)
                 .SetImmediateTransitionSettings();
 
             // 表情が変化した場合に適用されるトランジション設定
             AnimatorTransitionUtil.AddExitTransition(neutralState)
-                .Greater(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.LeftHandGesture - 1)
-                .Less(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.SelectedFacialExpressionInMenu + 1)
+                .Greater(SyncParameters.FacialExpressionMode, FacialExpressionModeType.LeftHandGesture - 1)
+                .Less(SyncParameters.FacialExpressionMode, FacialExpressionModeType.SelectedFacialExpressionInMenu + 1)
                 .Exec(SetCrossFadeStateTransitionSettings);
 
             var immediateModes = new[]
             {
-                FacialExpressionControlModeType.DanceMode,
-                FacialExpressionControlModeType.AFKMode
+                FacialExpressionModeType.DanceMode,
+                FacialExpressionModeType.AFKMode
             };
 
             foreach (var mode in immediateModes)
             {
                 AnimatorTransitionUtil.AddExitTransition(neutralState)
-                    .Equals(SyncParameters.FacialExpressionControlMode, mode)
+                    .Equals(SyncParameters.FacialExpressionMode, mode)
                     .SetImmediateTransitionSettings();
             }
 
             // 表情設定用サブステートマシンへのトランジション
             AnimatorTransitionUtil.AddEntryTransition(layer.stateMachine, gestureFacialExpressionsStateMachine)
-                .Greater(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.LeftHandGesture - 1)
-                .Less(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.RightHandGestureFixed + 1);
+                .Greater(SyncParameters.FacialExpressionMode, FacialExpressionModeType.LeftHandGesture - 1)
+                .Less(SyncParameters.FacialExpressionMode, FacialExpressionModeType.RightHandGestureFixed + 1);
 
             AnimatorTransitionUtil.AddExitTransition(gestureFacialExpressionsStateMachine, layer.stateMachine);
 
             AnimatorTransitionUtil.AddEntryTransition(layer.stateMachine, selectedFacialExpressionsStateMachine)
-                .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.SelectedFacialExpressionInMenu);
+                .Equals(SyncParameters.FacialExpressionMode, FacialExpressionModeType.SelectedFacialExpressionInMenu);
 
             AnimatorTransitionUtil.AddExitTransition(selectedFacialExpressionsStateMachine, layer.stateMachine);
 
             // 個別ステート（ダンスモード等）へのトランジション
-            AddSimpleModeTransition(layer.stateMachine, danceModeState, FacialExpressionControlModeType.DanceMode);
-            AddSimpleModeTransition(layer.stateMachine, afkState, FacialExpressionControlModeType.AFKMode);
+            AddSimpleModeTransition(layer.stateMachine, danceModeState, FacialExpressionModeType.DanceMode);
+            AddSimpleModeTransition(layer.stateMachine, afkState, FacialExpressionModeType.AFKMode);
 
             var gestureFacialExpressions = _fec.facialExpressionGesturePresets
                 .SelectMany(x => x != null
@@ -150,7 +150,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 }
             }
 
-            var selectedFacialExpressions = FacialExpressionControlBuildUtil.GetValidGroups(_fec)
+            var selectedFacialExpressions = FacialExpressionBuildUtil.GetValidGroups(_fec)
                 .SelectMany(x => x.facialExpressions)
                 .Select((v, i) => new { v, i })
                 .GroupBy(x => x.i / FacialExpressionNumbering.StateGroupSize)
@@ -175,29 +175,29 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 for (var j = 0; j < selectedFacialExpressions[i].Count; j++)
                 {
                     var facialExpressionNumber = groupBaseNumber + j + 1;
-                    var state = CreateFacialExpressionState(stateMachine, $"Selected Facial Expression ({facialExpressionNumber})", selectedFacialExpressions[i][j], SyncParameters.FixedWeight, new Vector3(500, AnimatorLayout.RowSpacing * j, 0));
+                    var state = CreateFacialExpressionState(stateMachine, $"Selected Facial Expression ({facialExpressionNumber})", selectedFacialExpressions[i][j], SyncParameters.LockedFacialExpressionWeight, new Vector3(500, AnimatorLayout.RowSpacing * j, 0));
 
                     AnimatorTransitionUtil.AddEntryTransition(stateMachine, state)
                         .Equals(SyncParameters.CurrentFacialExpressionNumber, facialExpressionNumber);
 
                     AnimatorTransitionUtil.AddExitTransition(state)
-                        .Greater(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.Neutral - 1)
-                        .Less(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.RightHandGestureFixed + 1)
+                        .Greater(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Neutral - 1)
+                        .Less(SyncParameters.FacialExpressionMode, FacialExpressionModeType.RightHandGestureFixed + 1)
                         .Exec(SetCrossFadeStateTransitionSettings);
 
                     AnimatorTransitionUtil.AddExitTransition(state)
-                        .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.SelectedFacialExpressionInMenu)
+                        .Equals(SyncParameters.FacialExpressionMode, FacialExpressionModeType.SelectedFacialExpressionInMenu)
                         .NotEqual(SyncParameters.CurrentFacialExpressionNumber, facialExpressionNumber)
                         .Exec(SetCrossFadeStateTransitionSettings);
 
                     AnimatorTransitionUtil.AddExitTransition(state)
-                        .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.FacialExpressionControlInactive)
+                        .Equals(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Inactive)
                         .SetImmediateTransitionSettings();
 
                     foreach (var mode in immediateModes)
                     {
                         AnimatorTransitionUtil.AddExitTransition(state)
-                            .Equals(SyncParameters.FacialExpressionControlMode, mode)
+                            .Equals(SyncParameters.FacialExpressionMode, mode)
                             .SetImmediateTransitionSettings();
                     }
                 }
@@ -209,10 +209,10 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         private void AddSimpleModeTransition(AnimatorStateMachine stateMachine, AnimatorState state, int modeValue)
         {
             AnimatorTransitionUtil.AddEntryTransition(stateMachine, state)
-                .Equals(SyncParameters.FacialExpressionControlMode, modeValue);
+                .Equals(SyncParameters.FacialExpressionMode, modeValue);
 
             AnimatorTransitionUtil.AddExitTransition(state)
-                .NotEqual(SyncParameters.FacialExpressionControlMode, modeValue)
+                .NotEqual(SyncParameters.FacialExpressionMode, modeValue)
                 .SetImmediateTransitionSettings();
         }
 
@@ -231,24 +231,24 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             stateMachine.parentStateMachinePosition = new Vector3(1000, 320, 0);
 
             var leftGestureState = CreateFacialExpressionState(stateMachine, "Left Gesture", facialExpression, VRCParameters.GESTURE_LEFT_WEIGHT, new Vector3(300, 0, 0));
-            var leftGestureFixedState = CreateFacialExpressionState(stateMachine, "Left Gesture (Fixed)", facialExpression, SyncParameters.FixedWeight, new Vector3(700, 0, 0));
+            var leftGestureFixedState = CreateFacialExpressionState(stateMachine, "Left Gesture (Fixed)", facialExpression, SyncParameters.LockedFacialExpressionWeight, new Vector3(700, 0, 0));
             var rightGestureState = CreateFacialExpressionState(stateMachine, "Right Gesture", facialExpression, VRCParameters.GESTURE_RIGHT_WEIGHT, new Vector3(300, 320, 0));
-            var rightGestureFixedState = CreateFacialExpressionState(stateMachine, "Right Gesture (Fixed)", facialExpression, SyncParameters.FixedWeight, new Vector3(700, 320, 0));
+            var rightGestureFixedState = CreateFacialExpressionState(stateMachine, "Right Gesture (Fixed)", facialExpression, SyncParameters.LockedFacialExpressionWeight, new Vector3(700, 320, 0));
 
             // ハンドジェスチャー用ステート
             var stateDefinitions = new[]
             {
-                new { State = leftGestureState, Mode = FacialExpressionControlModeType.LeftHandGesture },
-                new { State = leftGestureFixedState, Mode = FacialExpressionControlModeType.LeftHandGestureFixed },
-                new { State = rightGestureState, Mode = FacialExpressionControlModeType.RightHandGesture },
-                new { State = rightGestureFixedState, Mode = FacialExpressionControlModeType.RightHandGestureFixed }
+                new { State = leftGestureState, Mode = FacialExpressionModeType.LeftHandGesture },
+                new { State = leftGestureFixedState, Mode = FacialExpressionModeType.LeftHandGestureFixed },
+                new { State = rightGestureState, Mode = FacialExpressionModeType.RightHandGesture },
+                new { State = rightGestureFixedState, Mode = FacialExpressionModeType.RightHandGestureFixed }
             };
 
             foreach (var src in stateDefinitions)
             {
                 // Entry遷移
                 AnimatorTransitionUtil.AddEntryTransition(stateMachine, src.State)
-                    .Equals(SyncParameters.FacialExpressionControlMode, src.Mode);
+                    .Equals(SyncParameters.FacialExpressionMode, src.Mode);
 
                 // 相互遷移
                 foreach (var dest in stateDefinitions)
@@ -259,37 +259,37 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                     }
 
                     AnimatorTransitionUtil.AddTransition(src.State, dest.State)
-                        .Equals(SyncParameters.FacialExpressionControlMode, dest.Mode)
+                        .Equals(SyncParameters.FacialExpressionMode, dest.Mode)
                         .Equals(SyncParameters.CurrentFacialExpressionNumber, facialExpressionNumber)
                         .SetImmediateTransitionSettings();
                 }
 
                 // Exit遷移の追加
                 AnimatorTransitionUtil.AddExitTransition(src.State)
-                    .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.FacialExpressionControlInactive)
+                    .Equals(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Inactive)
                     .SetImmediateTransitionSettings();
 
                 AnimatorTransitionUtil.AddExitTransition(src.State)
-                    .Greater(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.Neutral - 1)
-                    .Less(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.RightHandGestureFixed + 1)
+                    .Greater(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Neutral - 1)
+                    .Less(SyncParameters.FacialExpressionMode, FacialExpressionModeType.RightHandGestureFixed + 1)
                     .NotEqual(SyncParameters.CurrentFacialExpressionNumber, facialExpressionNumber)
                     .Exec(SetCrossFadeStateTransitionSettings);
 
                 AnimatorTransitionUtil.AddExitTransition(src.State)
-                    .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.SelectedFacialExpressionInMenu)
+                    .Equals(SyncParameters.FacialExpressionMode, FacialExpressionModeType.SelectedFacialExpressionInMenu)
                     .Exec(SetCrossFadeStateTransitionSettings);
 
                 // その他（Dance, AFK）
                 var immediateModes = new[]
                 {
-                    FacialExpressionControlModeType.DanceMode,
-                    FacialExpressionControlModeType.AFKMode
+                    FacialExpressionModeType.DanceMode,
+                    FacialExpressionModeType.AFKMode
                 };
 
                 foreach (var mode in immediateModes)
                 {
                     AnimatorTransitionUtil.AddExitTransition(src.State)
-                        .Equals(SyncParameters.FacialExpressionControlMode, mode)
+                        .Equals(SyncParameters.FacialExpressionMode, mode)
                         .SetImmediateTransitionSettings();
                 }
             }
@@ -305,7 +305,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
         private AnimatorState CreateFacialExpressionState(AnimatorStateMachine stateMachine, string stateName, FacialExpression facialExpression, string motionTimeParameterName, Vector3 position)
         {
             var state = stateMachine.AddState(stateName, position);
-            state.speed = _fec.transitionTime > 0 ? 1f / _fec.transitionTime : 0f;
+            state.speed = _fec.transitionDuration > 0 ? 1f / _fec.transitionDuration : 0f;
             state.writeDefaultValues = false;
             state.motion = facialExpression?.motion != null ? facialExpression.motion : blankAnimationClip;
 
@@ -345,7 +345,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             transition.hasExitTime = false;
             transition.exitTime = 0;
             transition.hasFixedDuration = true;
-            transition.duration = _fec.transitionTime;
+            transition.duration = _fec.transitionDuration;
             transition.offset = 0;
             transition.interruptionSource = TransitionInterruptionSource.None;
             transition.orderedInterruption = true;

@@ -6,10 +6,10 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 {
     public class DefaultFacialExpressionLayerBuilder : LayerBuilderBase
     {
-        private readonly FacialExpressionControl _fec;
+        private readonly FacialExpressionController _fec;
         private readonly GameObject _avatarRootObject;
 
-        public DefaultFacialExpressionLayerBuilder(AnimationClip blankClip, FacialExpressionControl fec, GameObject avatarRootObject) : base(blankClip)
+        public DefaultFacialExpressionLayerBuilder(AnimationClip blankClip, FacialExpressionController fec, GameObject avatarRootObject) : base(blankClip)
         {
             _fec = fec;
             _avatarRootObject = avatarRootObject;
@@ -34,19 +34,19 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             activeState.motion = GetDefaultFaceAnimation();
 
             AnimatorTransitionUtil.AddTransition(initialState, inactiveState)
-                .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.FacialExpressionControlInactive)
+                .Equals(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Inactive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddTransition(initialState, activeState)
-                .NotEqual(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.FacialExpressionControlInactive)
+                .NotEqual(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Inactive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddTransition(inactiveState, activeState)
-                .NotEqual(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.FacialExpressionControlInactive)
+                .NotEqual(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Inactive)
                 .SetImmediateTransitionSettings();
 
             AnimatorTransitionUtil.AddTransition(activeState, inactiveState)
-                .Equals(SyncParameters.FacialExpressionControlMode, FacialExpressionControlModeType.FacialExpressionControlInactive)
+                .Equals(SyncParameters.FacialExpressionMode, FacialExpressionModeType.Inactive)
                 .SetImmediateTransitionSettings();
 
             return layer;
@@ -54,7 +54,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
         private Motion GetDefaultFaceAnimation()
         {
-            if (_fec.generateDefaultFacialAnimation)
+            if (_fec.generateDefaultFacialExpressionAnimation)
             {
                 var feag = new FacialExpressionAnimationGenerator();
                 var generated = feag.FromAvatar("Default Facial Expression (Auto Generated)", _avatarRootObject, null);
@@ -66,7 +66,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 Debug.LogWarning("[FacialExpressionController] Failed to auto-generate the default facial expression animation. Falling back to a blank animation clip.");
                 return blankAnimationClip;
             }
-            return _fec.defaultFace != null ? _fec.defaultFace : blankAnimationClip;
+            return _fec.defaultFacialExpressionMotion != null ? _fec.defaultFacialExpressionMotion : blankAnimationClip;
         }
     }
 }
