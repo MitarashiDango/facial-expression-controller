@@ -1,9 +1,10 @@
 using System.Linq;
 using MitarashiDango.FacialExpressionController.Editor;
-using MitarashiDango.FacialExpressionController;
 using nadena.dev.modular_avatar.core;
 using nadena.dev.ndmf;
 using UnityEngine;
+using nadena.dev.ndmf.animator;
+using VRC.SDK3.Avatars.Components;
 
 [assembly: ExportsPlugin(typeof(FacialExpressionControllerNDMFPlugin))]
 
@@ -18,10 +19,17 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             InPhase(BuildPhase.Generating)
                 .BeforePlugin("nadena.dev.modular-avatar")
-                .Run("Run Facial Expression Controller Processes", ctx => Processing(ctx));
+                .Run("Run Facial Expression Controller Generating Process", ctx => GeneratingProcess(ctx));
+
+            InPhase(BuildPhase.Transforming)
+                .BeforePlugin("nadena.dev.modular-avatar")
+                .WithRequiredExtension(typeof(AnimatorServicesContext), seq =>
+                {
+                    seq.Run("Run Facial Expression Controller Transforming Process", ctx => TransformingProcess(ctx));
+                });
         }
 
-        private void Processing(BuildContext ctx)
+        private void GeneratingProcess(BuildContext ctx)
         {
             var fecs = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControl>(true);
             if (fecs.Length == 0)
@@ -53,8 +61,91 @@ namespace MitarashiDango.FacialExpressionController.Editor
             {
                 BuildMenuTree(fec, fecMenu);
             }
+        }
+
+        private void TransformingProcess(BuildContext ctx)
+        {
+            var fecs = ctx.AvatarRootObject.GetComponentsInChildren<FacialExpressionControl>(true);
+            if (fecs.Length == 0)
+            {
+                DestroyComponents(ctx);
+                return;
+            }
+
+            if (fecs.Length > 1)
+            {
+                var paths = string.Join(", ", fecs.Select(f => MiscUtil.GetPathInHierarchy(f.gameObject, ctx.AvatarRootObject)));
+                Debug.LogWarning($"[FacialExpressionController] Multiple FacialExpressionControl components were detected. Only the first one will be processed. Detected at: {paths}");
+            }
+
+            RemoveLayers(ctx, fecs[0]);
 
             DestroyComponents(ctx);
+        }
+
+        private void RemoveLayers(BuildContext ctx, FacialExpressionControl fec)
+        {
+            if (fec == null || !fec.removeExistingFacialExpressionLayers || fec.layersToRemove == null || fec?.layersToRemove.Count == 0)
+            {
+                return;
+            }
+
+            var asc = ctx.Extension<AnimatorServicesContext>();
+            var avatarDescriptor = ctx.AvatarRootObject.GetComponent<VRCAvatarDescriptor>();
+
+            foreach (var removalTarget in fec.layersToRemove)
+            {
+                if (string.IsNullOrEmpty(removalTarget.layerName))
+                {
+                    Debug.LogWarning($"[FacialExpressionController] Layer removal target name is empty. ({removalTarget.layerType})");
+                    continue;
+                }
+
+                if (!IsCustomAvatarLayer(avatarDescriptor, removalTarget.layerType))
+                {
+                    Debug.LogWarning($"[FacialExpressionController] Layer removal skipped because the avatar layer is not a custom layer: {removalTarget.layerType}");
+                    continue;
+                }
+
+                if (!asc.ControllerContext.Controllers.TryGetValue(removalTarget.layerType, out var controller))
+                {
+                    Debug.LogWarning($"[FacialExpressionController] Animator controller for layer type was not found: {removalTarget.layerType}");
+                    continue;
+                }
+
+                var removalTargetLayers = controller.Layers.Where(layer => layer.Name == removalTarget.layerName).ToList();
+                if (removalTargetLayers.Count == 0)
+                {
+                    Debug.LogWarning($"[FacialExpressionController] Layer removal target was not found: {removalTarget.layerName} ({removalTarget.layerType})");
+                    continue;
+                }
+
+                foreach (var removalTargetLayer in removalTargetLayers)
+                {
+                    Debug.Log($"[FacialExpressionController] Remove layer: {removalTargetLayer.Name} ({removalTarget.layerType})");
+                    controller.RemoveLayer(removalTargetLayer);
+                }
+            }
+        }
+
+        private bool IsCustomAvatarLayer(VRCAvatarDescriptor avatarDescriptor, VRCAvatarDescriptor.AnimLayerType layerType)
+        {
+            var customLayer = GetCustomAnimLayer(avatarDescriptor?.baseAnimationLayers, layerType)
+                ?? GetCustomAnimLayer(avatarDescriptor?.specialAnimationLayers, layerType);
+
+            return customLayer.HasValue
+                && !customLayer.Value.isDefault
+                && customLayer.Value.animatorController != null;
+        }
+
+        private VRCAvatarDescriptor.CustomAnimLayer? GetCustomAnimLayer(
+            VRCAvatarDescriptor.CustomAnimLayer[] customAnimLayers,
+            VRCAvatarDescriptor.AnimLayerType layerType)
+        {
+            return customAnimLayers?
+                .Where(layer => layer.type == layerType)
+                .Cast<VRCAvatarDescriptor.CustomAnimLayer?>()
+                .FirstOrDefault();
         }
 
         private bool ValidateFacialExpressionCount(FacialExpressionControl fec)
