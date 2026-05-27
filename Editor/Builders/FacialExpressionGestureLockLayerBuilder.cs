@@ -133,8 +133,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             // - 以下のすべての条件を満たす場合、ロック有効化を行う
             //   - AFK状態ではない場合
             //   - ダンスモードではない場合
-            //   - Sit状態ではない場合
-            //     - InStation = falseな状態が保証されているため、Sit判定時のロック機能自動無効化の状態についてはチェックを行わない
+            //   - InStation = false の場合
+            //     - InStation = false が保証されているため、乗り物着座時のロック切り替え一時停止フラグはチェック不要
             AnimatorTransitionUtil.AddTransition(gestureLockDisabledState, setEnableState)
                 .If(InternalParameters.FacialExpressionLockReceiverInContact)
                 .If(InternalParameters.ContactLockEnabled)
@@ -144,14 +144,14 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 .SetImmediateTransitionSettings();
 
             // [Gesture Lock Disabled] -> [Set Enable]
-            // - Sit判定時にロック機能自動無効化がOFFの場合、Sit判定かつSeatedな状態でもロック有効化を行う
-            //   - InStation = true かつ Seated = falseの時はロック機能自動無効化がOFFの場合でもロック状態の切り替えを行わないようにする(いわゆるダンスワールドでのアニメーション適用時など)
+            // - SuspendFacialExpressionLockSwitchInVehicleEnabled が OFF の場合、InStation かつ Seated でもロック有効化を行う
+            //   - InStation = true かつ Seated = false の時は、本フラグが OFF でもロック切り替えを行わない (いわゆるダンスワールドでのアニメーション適用時など)
             AnimatorTransitionUtil.AddTransition(gestureLockDisabledState, setEnableState)
                 .If(InternalParameters.FacialExpressionLockReceiverInContact)
                 .If(InternalParameters.ContactLockEnabled)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
-                .IfNot(InternalParameters.VehicleModeAutoSwitchEnabled)
+                .IfNot(InternalParameters.SuspendFacialExpressionLockSwitchInVehicleEnabled)
                 .If(VRCParameters.IN_STATION)
                 .If(VRCParameters.SEATED)
                 .SetImmediateTransitionSettings();
@@ -160,8 +160,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             // - 以下のすべての条件を満たす場合、ロック無効化を行う
             //   - AFK状態ではない場合
             //   - ダンスモードではない場合
-            //   - Sit状態ではない場合
-            //     - InStation = falseな状態が保証されているため、Sit判定時のロック機能自動無効化の状態についてはチェックを行わない
+            //   - InStation = false の場合
+            //     - InStation = false が保証されているため、乗り物着座時のロック切り替え一時停止フラグはチェック不要
             AnimatorTransitionUtil.AddTransition(gestureLockEnabledState, setDisableState)
                 .If(InternalParameters.FacialExpressionLockReceiverInContact)
                 .If(InternalParameters.ContactLockEnabled)
@@ -171,14 +171,14 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 .SetImmediateTransitionSettings();
 
             // [Gesture Lock Enabled] -> [Set Disable]
-            // - Sit判定時にロック機能自動無効化がOFFの場合、Sit判定かつSeatedな状態でもロック無効化を行う
-            //   - InStation = true かつ Seated = falseの時はロック機能自動無効化がOFFの場合でもロック状態の切り替えを行わないようにする(いわゆるダンスワールドでのアニメーション適用時など)
+            // - SuspendFacialExpressionLockSwitchInVehicleEnabled が OFF の場合、InStation かつ Seated でもロック無効化を行う
+            //   - InStation = true かつ Seated = false の時は、本フラグが OFF でもロック切り替えを行わない (いわゆるダンスワールドでのアニメーション適用時など)
             AnimatorTransitionUtil.AddTransition(gestureLockEnabledState, setDisableState)
                 .If(InternalParameters.FacialExpressionLockReceiverInContact)
                 .If(InternalParameters.ContactLockEnabled)
                 .IfNot(InternalParameters.State_AFKModeActive)
                 .IfNot(InternalParameters.State_DanceModeActive)
-                .IfNot(InternalParameters.VehicleModeAutoSwitchEnabled)
+                .IfNot(InternalParameters.SuspendFacialExpressionLockSwitchInVehicleEnabled)
                 .If(VRCParameters.IN_STATION)
                 .If(VRCParameters.SEATED)
                 .SetImmediateTransitionSettings();

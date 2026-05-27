@@ -81,7 +81,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             {
                 InternalParameters.FacialExpressionControllerEnabled,
                 InternalParameters.DanceModeAutoSwitchEnabled,
-                InternalParameters.VehicleModeAutoSwitchEnabled,
+                InternalParameters.SuspendFacialExpressionLockSwitchInVehicleEnabled,
                 InternalParameters.FacialExpressionLocked,
                 InternalParameters.SelectedLeftGesturePreset,
                 InternalParameters.SelectedRightGesturePreset,
@@ -93,7 +93,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 InternalParameters.State_CurrentGestureRight,
                 InternalParameters.State_CurrentGestureHand,
                 InternalParameters.State_LastGestureChangedHand,
-                InternalParameters.State_VehicleModeActive,
                 InternalParameters.State_AFKModeActive,
                 InternalParameters.State_DanceModeActive,
                 SyncParameters.FacialExpressionMode,
