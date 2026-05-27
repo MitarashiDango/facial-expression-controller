@@ -9,7 +9,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
     {
         private readonly FacialExpressionController _fec;
 
-        public AFKModeControlLayerBuilder(AnimationClip blankClip, FacialExpressionController fec) : base(blankClip)
+        public AFKModeControlLayerBuilder(AnimationClip blankClip, FacialExpressionController fec, string waitClipTargetPath) : base(blankClip, waitClipTargetPath)
         {
             _fec = fec;
         }
@@ -68,17 +68,9 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             if (_fec.afkExitWaitMode == AFKExitWaitMode.Duration && _fec.afkExitWaitDuration > 0)
             {
-                switchToAFKInactiveTransition.Exec((builder) =>
-                {
-                    var transition = builder.Transition;
-                    transition.hasExitTime = true;
-                    transition.exitTime = _fec.afkExitWaitDuration;
-                    transition.hasFixedDuration = true;
-                    transition.duration = 0;
-                    transition.offset = 0;
-                    transition.interruptionSource = TransitionInterruptionSource.None;
-                    transition.orderedInterruption = true;
-                });
+                switchToAFKInactiveState.motion = CreateWaitClip($"AFK Exit Wait ({_fec.afkExitWaitDuration:0.###}s)", _fec.afkExitWaitDuration);
+
+                switchToAFKInactiveTransition.Exec(builder => builder.SetExitAfterMotionSettings());
             }
             else if (_fec.afkExitWaitMode == AFKExitWaitMode.Parameter
                 && _fec.afkExitWaitConditions != null

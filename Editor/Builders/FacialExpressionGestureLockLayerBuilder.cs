@@ -5,7 +5,9 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 {
     public class FacialExpressionGestureLockLayerBuilder : LayerBuilderBase
     {
-        public FacialExpressionGestureLockLayerBuilder(AnimationClip blankClip) : base(blankClip)
+        private const float GestureLockIntervalDuration = 0.5f;
+
+        public FacialExpressionGestureLockLayerBuilder(AnimationClip blankClip, string waitClipTargetPath) : base(blankClip, waitClipTargetPath)
         {
         }
 
@@ -35,7 +37,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             var setDisableState = layer.stateMachine.AddState("Set Disable", new Vector3(600, -160, 0));
             setDisableState.writeDefaultValues = false;
-            setDisableState.motion = blankAnimationClip;
+            setDisableState.motion = CreateWaitClip("Gesture Lock Interval (Lock to Unlock)", GestureLockIntervalDuration);
             setDisableState.behaviours = new StateMachineBehaviour[]
             {
                 CreateVRCAvatarParameterLocalSetDriver(InternalParameters.FacialExpressionLocked, 0)
@@ -43,7 +45,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             var setEnableState = layer.stateMachine.AddState("Set Enable", new Vector3(600, 160, 0));
             setEnableState.writeDefaultValues = false;
-            setEnableState.motion = blankAnimationClip;
+            setEnableState.motion = CreateWaitClip("Gesture Lock Interval (Unlock to Lock)", GestureLockIntervalDuration);
             setEnableState.behaviours = new StateMachineBehaviour[]
             {
                 CreateVRCAvatarParameterLocalSetDriver(InternalParameters.FacialExpressionLocked, 1)
@@ -183,31 +185,11 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
 
             // [Set Disable] -> [Interval (Lock to Unlock)]
             AnimatorTransitionUtil.AddTransition(setDisableState, lockToUnlockIntervalState)
-                .Exec((builder) =>
-                {
-                    var transition = builder.Transition;
-                    transition.hasExitTime = true;
-                    transition.exitTime = 0.5f;
-                    transition.hasFixedDuration = true;
-                    transition.duration = 0;
-                    transition.offset = 0;
-                    transition.interruptionSource = TransitionInterruptionSource.None;
-                    transition.orderedInterruption = true;
-                });
+                .Exec(builder => builder.SetExitAfterMotionSettings());
 
             // [Set Enable] -> [Interval (Unlock to Lock)]
             AnimatorTransitionUtil.AddTransition(setEnableState, unlockToLockIntervalState)
-                .Exec((builder) =>
-                {
-                    var transition = builder.Transition;
-                    transition.hasExitTime = true;
-                    transition.exitTime = 0.5f;
-                    transition.hasFixedDuration = true;
-                    transition.duration = 0;
-                    transition.offset = 0;
-                    transition.interruptionSource = TransitionInterruptionSource.None;
-                    transition.orderedInterruption = true;
-                });
+                .Exec(builder => builder.SetExitAfterMotionSettings());
 
             // [Interval (Lock to Unlock)] -> [Gesture Lock Disabled]
             AnimatorTransitionUtil.AddTransition(lockToUnlockIntervalState, gestureLockDisabledState)

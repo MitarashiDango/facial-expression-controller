@@ -8,6 +8,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
 {
     public class FacialExpressionAnimatorControllerBuilder
     {
+        private const string InternalRootName = "__FEC_Internal";
+        private const string WaitClipTargetName = "__FEC_WaitClipTarget";
+
         private enum HandType
         {
             Left,
@@ -18,12 +21,19 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// ハンドジェスチャー適用対象判定レイヤーの生成
         /// </summary>
         /// <returns>ハンドジェスチャー適用対象判定レイヤー</returns>
-        public AnimatorController CreateMainAnimatorController(FacialExpressionController fec)
+        public AnimatorController CreateMainAnimatorController(GameObject avatarRootObject, FacialExpressionController fec)
         {
+            avatarRootObject = avatarRootObject != null ? avatarRootObject : MiscUtil.GetAvatarRoot(fec.transform);
+            if (avatarRootObject == null)
+            {
+                throw new System.InvalidOperationException("Avatar root object is required to create the main animator controller.");
+            }
+
             var blankClip = new AnimationClip
             {
                 name = "blank"
             };
+            var waitClipTargetPath = EnsureWaitClipTargetPath(avatarRootObject);
 
             var parameters = new Parameters();
 
@@ -46,13 +56,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
             // モード制御系
             if (fec.useAFKMode)
             {
-                ac.AddLayer(new AFKModeControlLayerBuilder(blankClip, fec).Build());
+                ac.AddLayer(new AFKModeControlLayerBuilder(blankClip, fec, waitClipTargetPath).Build());
             }
             ac.AddLayer(new DanceModeControlLayerBuilder(blankClip).Build());
             ac.AddLayer(new VehicleModeControlLayerBuilder(blankClip).Build());
 
             // ロック・ウェイト制御系
-            ac.AddLayer(new FacialExpressionGestureLockLayerBuilder(blankClip).Build());
+            ac.AddLayer(new FacialExpressionGestureLockLayerBuilder(blankClip, waitClipTargetPath).Build());
             ac.AddLayer(new CopyGestureWeightLayerBuilder(blankClip).Build());
 
             // 表情選択・適用系
@@ -61,6 +71,25 @@ namespace MitarashiDango.FacialExpressionController.Editor
             ac.AddLayer(new ApplyFacialExpressionLayerBuilder(blankClip, fec).Build());
 
             return ac;
+        }
+
+        private string EnsureWaitClipTargetPath(GameObject avatarRootObject)
+        {
+            var internalRoot = avatarRootObject.transform.Find(InternalRootName)?.gameObject;
+            if (internalRoot == null)
+            {
+                internalRoot = new GameObject(InternalRootName);
+                internalRoot.transform.SetParent(avatarRootObject.transform, false);
+            }
+
+            var waitClipTarget = internalRoot.transform.Find(WaitClipTargetName)?.gameObject;
+            if (waitClipTarget == null)
+            {
+                waitClipTarget = new GameObject(WaitClipTargetName);
+                waitClipTarget.transform.SetParent(internalRoot.transform, false);
+            }
+
+            return MiscUtil.GetPathInHierarchy(waitClipTarget, avatarRootObject);
         }
 
         public AnimatorController CreateDefaultFacialExpressionAnimatorController(BuildContext ctx, FacialExpressionController fec)

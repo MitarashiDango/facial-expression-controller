@@ -195,7 +195,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void CreateAnimatorControllerProcess(BuildContext ctx, FacialExpressionController fec)
         {
-            CreateMainAnimatorController(fec);
+            CreateMainAnimatorController(ctx, fec);
 
             if (fec.defaultFacialExpressionMotion != null || fec.generateDefaultFacialExpressionAnimation)
             {
@@ -213,10 +213,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
         }
 
-        private void CreateMainAnimatorController(FacialExpressionController fec)
+        private void CreateMainAnimatorController(BuildContext ctx, FacialExpressionController fec)
         {
             var builder = new FacialExpressionAnimatorControllerBuilder();
-            var ac = builder.CreateMainAnimatorController(fec);
+            var ac = builder.CreateMainAnimatorController(ctx.AvatarRootObject, fec);
 
             var mergeAnimator = fec.gameObject.AddComponent<ModularAvatarMergeAnimator>();
             mergeAnimator.animator = ac;

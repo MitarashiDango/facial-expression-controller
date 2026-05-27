@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System;
 using UnityEditor.Animations;
 using UnityEngine;
 using VRC.SDK3.Avatars.Components;
@@ -9,10 +10,12 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
     public abstract class LayerBuilderBase
     {
         protected readonly AnimationClip blankAnimationClip;
+        private readonly string _waitClipTargetPath;
 
-        protected LayerBuilderBase(AnimationClip blankClip)
+        protected LayerBuilderBase(AnimationClip blankClip, string waitClipTargetPath = null)
         {
             blankAnimationClip = blankClip;
+            _waitClipTargetPath = waitClipTargetPath;
         }
 
         /// <summary>
@@ -28,6 +31,28 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
                 defaultWeight = defaultWeight,
                 stateMachine = new AnimatorStateMachine(),
             };
+        }
+
+        protected AnimationClip CreateWaitClip(string name, float duration)
+        {
+            if (string.IsNullOrEmpty(_waitClipTargetPath))
+            {
+                throw new InvalidOperationException("Wait clip target path is required to create wait clips.");
+            }
+
+            var clip = new AnimationClip
+            {
+                name = name,
+                frameRate = 60,
+            };
+
+            clip.SetCurve(
+                _waitClipTargetPath,
+                typeof(Transform),
+                "localPosition.x",
+                AnimationCurve.Constant(0, Mathf.Max(0, duration), 0));
+
+            return clip;
         }
 
         protected VRCAvatarParameterDriver CreateVRCAvatarParameterLocalSetDriver(Parameter parameter, float value)
