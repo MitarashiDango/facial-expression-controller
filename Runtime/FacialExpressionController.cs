@@ -6,7 +6,7 @@ using VRC.SDKBase;
 namespace MitarashiDango.FacialExpressionController
 {
     [DisallowMultipleComponent]
-    [AddComponentMenu("Facial Expression Controller/Controller")]
+    [AddComponentMenu("Facial Expression Controller/Facial Expression Controller")]
     public class FacialExpressionController : MonoBehaviour, IEditorOnly
     {
         /// <summary>
