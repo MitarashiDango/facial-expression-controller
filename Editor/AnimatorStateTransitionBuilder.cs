@@ -18,5 +18,16 @@ namespace MitarashiDango.FacialExpressionController.Editor
             Transition.interruptionSource = TransitionInterruptionSource.None;
             Transition.orderedInterruption = true;
         }
+
+        public void SetExitAfterMotionSettings()
+        {
+            Transition.hasExitTime = true;
+            Transition.exitTime = 1;
+            Transition.hasFixedDuration = true;
+            Transition.duration = 0;
+            Transition.offset = 0;
+            Transition.interruptionSource = TransitionInterruptionSource.None;
+            Transition.orderedInterruption = true;
+        }
     }
 }
