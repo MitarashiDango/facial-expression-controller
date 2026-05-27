@@ -22,7 +22,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 .Run("Run Facial Expression Controller Generating Process", ctx => GeneratingProcess(ctx));
 
             InPhase(BuildPhase.Transforming)
-                .BeforePlugin("nadena.dev.modular-avatar")
+                .AfterPlugin("nadena.dev.modular-avatar")
                 .WithRequiredExtension(typeof(AnimatorServicesContext), seq =>
                 {
                     seq.Run("Run Facial Expression Controller Transforming Process", ctx => TransformingProcess(ctx));
