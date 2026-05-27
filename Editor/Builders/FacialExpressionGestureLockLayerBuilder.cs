@@ -96,11 +96,13 @@ namespace MitarashiDango.FacialExpressionController.Editor.Builders
             // [Inactive] -> [Gesture Lock Disabled]
             AnimatorTransitionUtil.AddTransition(inactiveState, gestureLockDisabledState)
                 .If(InternalParameters.FacialExpressionControllerEnabled)
+                .IfNot(InternalParameters.FacialExpressionLocked)
                 .SetImmediateTransitionSettings();
 
             // [Inactive] -> [Gesture Lock Enabled]
             AnimatorTransitionUtil.AddTransition(inactiveState, gestureLockEnabledState)
                 .If(InternalParameters.FacialExpressionControllerEnabled)
+                .If(InternalParameters.FacialExpressionLocked)
                 .SetImmediateTransitionSettings();
 
             // [Initial State] -> [Gesture Lock Disabled]
