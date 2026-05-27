@@ -110,8 +110,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var switchToDanceModeOnToggle = CreateSwitchToDanceModeOnToggle();
             switchToDanceModeOnToggle.transform.SetParent(subMenu.transform);
 
-            var switchToVehicleModeOnToggle = CreateSwitchToVehicleModeOnToggle();
-            switchToVehicleModeOnToggle.transform.SetParent(subMenu.transform);
+            var suspendLockSwitchInVehicleToggle = CreateSuspendFacialExpressionLockSwitchInVehicleToggle();
+            suspendLockSwitchInVehicleToggle.transform.SetParent(subMenu.transform);
 
             var selectGesturePresetSubMenu = CreateSelectGesturePresetSubMenu(fec);
             selectGesturePresetSubMenu.transform.SetParent(subMenu.transform);
@@ -159,9 +159,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return go;
         }
 
-        private GameObject CreateSwitchToVehicleModeOnToggle()
+        private GameObject CreateSuspendFacialExpressionLockSwitchInVehicleToggle()
         {
-            var go = new GameObject("乗り物モード自動切り替え");
+            var go = new GameObject("乗り物着座時は表情ロック切り替えを停止");
 
             var maMenuItem = go.AddComponent<ModularAvatarMenuItem>();
             var control = new VRCExpressionsMenu.Control()
@@ -169,7 +169,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 type = VRCExpressionsMenu.Control.ControlType.Toggle,
                 parameter = new VRCExpressionsMenu.Control.Parameter()
                 {
-                    name = InternalParameters.VehicleModeAutoSwitchEnabled.name,
+                    name = InternalParameters.SuspendFacialExpressionLockSwitchInVehicleEnabled.name,
                 },
                 value = 1,
             };

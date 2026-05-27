@@ -30,14 +30,15 @@ namespace MitarashiDango.FacialExpressionController.Editor
         };
 
         /// <summary>
-        /// 乗り物モードへの切り替えを有効化するかどうか (true: する, false: しない)<br />
-        /// 乗り物モードがアクティブになった場合、以下の状態となる<br />
-        /// - 表情が一時的に固定される<br />
-        /// - 表情ロック用のContact Receiverが一時的に無効化される
+        /// 乗り物着座時に表情ロックの切り替えを一時停止するかどうか (true: 停止する, false: 停止しない)<br />
+        /// true の場合、InStation かつ Seated の状態のときに Contact Receiver による<br />
+        /// 表情ロックの自動切り替え（有効化／無効化のいずれも）を抑止する。<br />
+        /// コントローラ操作（トリガー等）による意図しないロック発火を防止する用途。<br />
+        /// ※既存の表情ロック状態自体は保持され、変更されない。
         /// </summary>
-        public static readonly Parameter VehicleModeAutoSwitchEnabled = new Parameter
+        public static readonly Parameter SuspendFacialExpressionLockSwitchInVehicleEnabled = new Parameter
         {
-            name = "FEC/Internal/VehicleModeAutoSwitchEnabled",
+            name = "FEC/Internal/SuspendFacialExpressionLockSwitchInVehicleEnabled",
             parameterType = UnityEngine.AnimatorControllerParameterType.Bool,
             defaultBool = false,
             localOnly = true,
@@ -179,18 +180,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             name = "FEC/Internal/State/LastGestureChangedHand",
             parameterType = UnityEngine.AnimatorControllerParameterType.Int,
             defaultInt = 0,
-            localOnly = true,
-            saved = false,
-        };
-
-        /// <summary>
-        /// 乗り物モードがアクティブかどうか
-        /// </summary>
-        public static readonly Parameter State_VehicleModeActive = new Parameter
-        {
-            name = "FEC/Internal/State/VehicleModeActive",
-            parameterType = UnityEngine.AnimatorControllerParameterType.Bool,
-            defaultBool = false,
             localOnly = true,
             saved = false,
         };

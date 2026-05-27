@@ -59,7 +59,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 ac.AddLayer(new AFKModeControlLayerBuilder(blankClip, fec, waitClipTargetPath).Build());
             }
             ac.AddLayer(new DanceModeControlLayerBuilder(blankClip).Build());
-            ac.AddLayer(new VehicleModeControlLayerBuilder(blankClip).Build());
 
             // ロック・ウェイト制御系
             ac.AddLayer(new FacialExpressionGestureLockLayerBuilder(blankClip, waitClipTargetPath).Build());
