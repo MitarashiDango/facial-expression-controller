@@ -1,0 +1,14 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="True">
+    <ui:VisualElement name="editor-root" class="expression-editor">
+        <ui:VisualElement name="header-container" class="header-container">
+            <ui:VisualElement name="target-container" class="target-container" />
+            <ui:VisualElement name="toolbar-container" class="toolbar-container" />
+            <ui:HelpBox name="message-box" text="" message-type="Info" class="hidden" />
+            <ui:VisualElement name="filter-container" class="filter-container" />
+        </ui:VisualElement>
+        <ui:Label name="empty-label" text="表示できるブレンドシェイプがありません。" class="empty-label" />
+        <ui:VisualElement name="list-panel" class="list-panel">
+            <ui:VisualElement name="blendshape-list-container" class="list-container" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
