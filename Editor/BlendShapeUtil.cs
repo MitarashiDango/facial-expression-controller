@@ -44,6 +44,34 @@ namespace MitarashiDango.FacialExpressionController.Editor
         }
 
         /// <summary>
+        /// SkinnedMeshRendererからブレンドシェイプの詳細情報を取得する
+        /// </summary>
+        /// <param name="smr">取得対象のSkinnedMeshRenderer</param>
+        /// <returns>ブレンドシェイプのインデックス・名称・現在値</returns>
+        public static List<BlendShapeInfo> GetBlendShapeInfos(SkinnedMeshRenderer smr)
+        {
+            var blendShapes = new List<BlendShapeInfo>();
+
+            var mesh = smr != null ? smr.sharedMesh : null;
+            if (mesh == null)
+            {
+                return blendShapes;
+            }
+
+            for (var i = 0; i < mesh.blendShapeCount; i++)
+            {
+                blendShapes.Add(new BlendShapeInfo
+                {
+                    index = i,
+                    name = mesh.GetBlendShapeName(i),
+                    value = smr.GetBlendShapeWeight(i),
+                });
+            }
+
+            return blendShapes;
+        }
+
+        /// <summary>
         /// メッシュに影響を及ぼしていないブレンドシェイプ名のリストを取得する
         /// </summary>
         /// <param name="smr">取得対象のSkinnedMeshRenderer</param>
@@ -105,5 +133,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             return false;
         }
+    }
+
+    public class BlendShapeInfo
+    {
+        public int index;
+        public string name;
+        public float value;
     }
 }
