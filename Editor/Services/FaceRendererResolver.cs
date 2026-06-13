@@ -9,7 +9,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// アバタールートから表情編集に用いる SkinnedMeshRenderer を解決する。
         /// </summary>
         /// <param name="avatarRootObject">アバターのルートオブジェクト</param>
-        /// <returns>表情用 SMR。解決できなければ null。</returns>
+        /// <returns>表情用 Skinned Mesh Renderer。解決できなければ null。</returns>
         public static SkinnedMeshRenderer Resolve(GameObject avatarRootObject)
         {
             if (avatarRootObject == null)
@@ -22,11 +22,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         /// <summary>
         /// 表情アニメーション生成に用いる SkinnedMeshRenderer を解決する。<br />
-        /// 優先度: (1) Viseme 用 SMR → (2) まばたき用 SMR → (3) 旧仕様互換の "Body" 直下 SMR
+        /// 優先度: (1) Viseme 用 Skinned Mesh Renderer → (2) まばたき用 Skinned Mesh Renderer → (3) 旧仕様互換の "Body" 直下 Skinned Mesh Renderer
         /// </summary>
         /// <param name="ad">アバターの VRCAvatarDescriptor</param>
         /// <param name="avatarRootObject">アバターのルートオブジェクト</param>
-        /// <returns>表情用 SMR。解決できなければ null。</returns>
+        /// <returns>表情用 Skinned Mesh Renderer。解決できなければ null。</returns>
         public static SkinnedMeshRenderer Resolve(VRCAvatarDescriptor ad, GameObject avatarRootObject)
         {
             if (ad != null

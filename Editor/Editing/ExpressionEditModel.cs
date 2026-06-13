@@ -11,6 +11,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
         WeightBlend,
     }
 
+    public enum ExpressionEditFrame
+    {
+        Start,
+        End,
+    }
+
     [Flags]
     public enum BlendShapeSystemExclusionReason
     {

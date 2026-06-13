@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using nadena.dev.ndmf.localization;
 using UnityEditor;
@@ -14,10 +15,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private const string MainUxmlPath = "Packages/com.matcha-soft.facial-expression-controller/Editor/UI/Windows/FacialExpressionEditorWindow.uxml";
         private const string MainUssPath = "Packages/com.matcha-soft.facial-expression-controller/Editor/UI/Windows/FacialExpressionEditorWindow.uss";
         private const double PreviewDebounceSeconds = 0.016d;
+        private const string SingleFrameModeLabel = "1 フレーム";
+        private const string WeightBlendModeLabel = "ウェイト連動（2 フレーム）";
+        private static readonly List<string> FrameModeChoices = new List<string> { SingleFrameModeLabel, WeightBlendModeLabel };
 
         private ObjectField _avatarField;
         private ObjectField _rendererField;
         private ObjectField _clipField;
+        private PopupField<string> _frameModeField;
         private ToolbarSearchField _searchField;
         private ToolbarMenu _filterMenu;
         private Toggle _previewToggle;
@@ -26,7 +31,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private Button _saveButton;
         private Button _saveAsButton;
         private Button _resetButton;
+        private Button _startFrameButton;
+        private Button _endFrameButton;
+        private Button _loadStartFromRendererButton;
+        private Slider _previewWeightSlider;
         private HelpBox _messageBox;
+        private VisualElement _weightModeContainer;
         private VisualElement _listContainer;
         private Label _emptyLabel;
 
@@ -36,6 +46,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private AnimationClip _currentClip;
         private string _currentAssetPath;
         private ExpressionFrameMode _loadedSourceFrameMode = ExpressionFrameMode.SingleFrame;
+        private ExpressionEditFrame _editingFrame = ExpressionEditFrame.Start;
+        private float _previewWeight;
         private bool _previewDirty;
         private bool _showChangedOnly;
         private bool _showEditableOnly;
@@ -127,6 +139,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             var targetContainer = root.Q<VisualElement>("target-container");
             var toolbarContainer = root.Q<VisualElement>("toolbar-container");
+            var frameModeContainer = root.Q<VisualElement>("frame-mode-container");
+            var frameTabContainer = root.Q<VisualElement>("frame-tab-container");
+            var weightPreviewContainer = root.Q<VisualElement>("weight-preview-container");
+            _weightModeContainer = root.Q<VisualElement>("weight-mode-container");
             _listContainer = root.Q<VisualElement>("blendshape-list-container");
             _emptyLabel = root.Q<Label>("empty-label");
             _messageBox = root.Q<HelpBox>("message-box");
@@ -183,6 +199,38 @@ namespace MitarashiDango.FacialExpressionController.Editor
             });
             toolbarContainer.Add(_previewToggle);
 
+            _frameModeField = new PopupField<string>("フレームモード", FrameModeChoices, 0);
+            _frameModeField.AddToClassList("frame-mode-field");
+            _frameModeField.labelElement.style.minWidth = 160f;
+            _frameModeField.labelElement.style.width = 180f;
+            _frameModeField.labelElement.style.flexShrink = 0f;
+            _frameModeField.RegisterValueChangedCallback(evt => SetFrameMode(GetFrameModeFromLabel(evt.newValue)));
+            frameModeContainer.Add(_frameModeField);
+
+            _startFrameButton = new Button(() => SetEditingFrame(ExpressionEditFrame.Start, true)) { text = "始点" };
+            _startFrameButton.AddToClassList("frame-tab-button");
+            frameTabContainer.Add(_startFrameButton);
+
+            _endFrameButton = new Button(() => SetEditingFrame(ExpressionEditFrame.End, true)) { text = "終点" };
+            _endFrameButton.AddToClassList("frame-tab-button");
+            frameTabContainer.Add(_endFrameButton);
+
+            _previewWeightSlider = new Slider("ウェイトプレビュー", 0f, 1f)
+            {
+                value = _previewWeight,
+            };
+            _previewWeightSlider.AddToClassList("weight-preview-slider");
+            _previewWeightSlider.RegisterValueChangedCallback(evt =>
+            {
+                _previewWeight = Mathf.Clamp01(evt.newValue);
+                RequestPreview();
+            });
+            weightPreviewContainer.Add(_previewWeightSlider);
+
+            _loadStartFromRendererButton = new Button(LoadCurrentRendererValuesIntoStart) { text = "始点へ Skinned Mesh Renderer 現在値を読み込み" };
+            _loadStartFromRendererButton.AddToClassList("load-start-button");
+            weightPreviewContainer.Add(_loadStartFromRendererButton);
+
             var filterContainer = root.Q<VisualElement>("filter-container");
             _searchField = new ToolbarSearchField();
             _searchField.AddToClassList("search-field");
@@ -197,6 +245,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             filterContainer.Add(_filterMenu);
 
             UpdateButtonStates();
+            UpdateFrameModeControls();
             ShowMessage("アバターを指定してください。", HelpBoxMessageType.Info);
         }
 
@@ -342,11 +391,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             if (_model != null && _model.hasIntermediateKeys)
             {
-                ShowMessage("3 つ以上のキーを持つクリップです。Phase 1 では始端のみを読み込み、保存時に中間キーは出力されません。", HelpBoxMessageType.Warning);
+                ShowMessage("3 つ以上のキーを持つクリップです。始端と終端のみを読み込みました。保存すると中間キーは出力されません。", HelpBoxMessageType.Warning);
             }
-            else if (_loadedSourceFrameMode != ExpressionFrameMode.SingleFrame)
+            else if (_loadedSourceFrameMode == ExpressionFrameMode.WeightBlend)
             {
-                ShowMessage("2 フレームのクリップです。Phase 1 では始端のみを読み込み、1 フレームで保存します。", HelpBoxMessageType.Warning);
+                ShowMessage("2 フレームのクリップをウェイト連動モードで読み込みました。", HelpBoxMessageType.Info);
             }
             else
             {
@@ -370,11 +419,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     ? ExpressionClipIO.Load(sourceClip, avatarRootObject, renderer)
                     : ExpressionClipIO.CreateModel(avatarRootObject, renderer);
                 _loadedSourceFrameMode = _model.frameMode;
-                NormalizeModelToSingleFrame(_model);
+                _editingFrame = ExpressionEditFrame.Start;
+                _previewWeight = 0f;
             }
             else
             {
                 _loadedSourceFrameMode = ExpressionFrameMode.SingleFrame;
+                _editingFrame = ExpressionEditFrame.Start;
+                _previewWeight = 0f;
             }
 
             if (_rendererField != null && _rendererField.value != renderer)
@@ -383,6 +435,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             RebuildBlendShapeList();
+            UpdateFrameModeControls();
             if (markDirty)
             {
                 MarkUnsaved();
@@ -407,6 +460,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _blendShapeListView.Changed += OnModelChanged;
             _blendShapeListView.PreviewValueChanged += OnBlendShapePreviewValueChanged;
             _blendShapeListView.PreviewResetRequested += StopPreview;
+            _blendShapeListView.SetEditingFrame(_editingFrame);
             _blendShapeListView.SetSearchText(_searchField != null ? _searchField.value : "");
             _blendShapeListView.SetShowChangedOnly(_showChangedOnly);
             _blendShapeListView.SetShowEditableOnly(_showEditableOnly);
@@ -420,12 +474,106 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void OnBlendShapePreviewValueChanged(BlendShapeEntry entry)
         {
-            _previewService?.SampleEntry(_model, entry);
+            _previewService?.SampleEntry(_model, entry, _previewWeight);
         }
 
         private void ResetValues()
         {
             _blendShapeListView?.ResetEditableValues();
+        }
+
+        private void SetFrameMode(ExpressionFrameMode frameMode)
+        {
+            if (_model == null)
+            {
+                UpdateFrameModeControls();
+                return;
+            }
+
+            if (_model.frameMode == frameMode)
+            {
+                UpdateFrameModeControls();
+                return;
+            }
+
+            Undo.IncrementCurrentGroup();
+            var group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("表情フレームモードを変更");
+            Undo.RecordObject(_model, "表情フレームモードを変更");
+
+            if (frameMode == ExpressionFrameMode.SingleFrame)
+            {
+                foreach (var entry in _model.entries)
+                {
+                    entry.endValue = entry.value;
+                }
+
+                _editingFrame = ExpressionEditFrame.Start;
+                _previewWeight = 0f;
+            }
+            else
+            {
+                _editingFrame = ExpressionEditFrame.End;
+                _previewWeight = 1f;
+            }
+
+            _model.frameMode = frameMode;
+            EditorUtility.SetDirty(_model);
+            Undo.CollapseUndoOperations(group);
+
+            _blendShapeListView?.SetEditingFrame(_editingFrame);
+            MarkUnsaved();
+            UpdateFrameModeControls();
+            RequestPreview();
+        }
+
+        private void SetEditingFrame(ExpressionEditFrame editingFrame, bool syncPreviewWeight)
+        {
+            _editingFrame = editingFrame;
+            _blendShapeListView?.SetEditingFrame(_editingFrame);
+
+            if (syncPreviewWeight && _model != null && _model.frameMode == ExpressionFrameMode.WeightBlend)
+            {
+                SetPreviewWeightWithoutNotify(editingFrame == ExpressionEditFrame.Start ? 0f : 1f);
+            }
+
+            UpdateFrameModeControls();
+            RequestPreview();
+        }
+
+        private void LoadCurrentRendererValuesIntoStart()
+        {
+            if (_model == null || _model.targetRenderer == null || _model.targetRenderer.sharedMesh == null)
+            {
+                ShowMessage("対象 Skinned Mesh Renderer を指定してください。", HelpBoxMessageType.Warning);
+                return;
+            }
+
+            StopPreview();
+
+            Undo.IncrementCurrentGroup();
+            var group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("始点へ Skinned Mesh Renderer 現在値を読み込み");
+            Undo.RecordObject(_model, "始点へ Skinned Mesh Renderer 現在値を読み込み");
+
+            foreach (var entry in _model.entries)
+            {
+                if (!CanEditEntryValue(entry) || !IsValidBlendShapeIndex(entry, _model.targetRenderer))
+                {
+                    continue;
+                }
+
+                entry.value = Mathf.Clamp(_model.targetRenderer.GetBlendShapeWeight(entry.index), 0f, 100f);
+            }
+
+            EditorUtility.SetDirty(_model);
+            Undo.CollapseUndoOperations(group);
+            SetEditingFrame(ExpressionEditFrame.Start, false);
+            SetPreviewWeightWithoutNotify(0f);
+            _blendShapeListView?.Refresh();
+            MarkUnsaved();
+            RequestPreview();
+            ShowMessage("始点へ現在の Skinned Mesh Renderer 値を読み込みました。", HelpBoxMessageType.Info);
         }
 
         private void ToggleChangedOnlyFilter()
@@ -543,21 +691,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return discard;
         }
 
-        private static void NormalizeModelToSingleFrame(ExpressionEditModel model)
-        {
-            if (model == null || model.frameMode == ExpressionFrameMode.SingleFrame)
-            {
-                return;
-            }
-
-            foreach (var entry in model.entries)
-            {
-                entry.endValue = entry.value;
-            }
-
-            model.frameMode = ExpressionFrameMode.SingleFrame;
-        }
-
         private bool ValidateRendererForAvatar(SkinnedMeshRenderer renderer, GameObject avatarRootObject)
         {
             if (renderer == null)
@@ -580,6 +713,62 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return true;
         }
 
+        private static bool CanEditEntryValue(BlendShapeEntry entry)
+        {
+            return entry != null && !entry.IsSystemLocked && !entry.userExcluded;
+        }
+
+        private static bool IsValidBlendShapeIndex(BlendShapeEntry entry, SkinnedMeshRenderer renderer)
+        {
+            return entry != null
+                && renderer != null
+                && renderer.sharedMesh != null
+                && entry.index >= 0
+                && entry.index < renderer.sharedMesh.blendShapeCount;
+        }
+
+        private void SetPreviewWeightWithoutNotify(float previewWeight)
+        {
+            _previewWeight = Mathf.Clamp01(previewWeight);
+            _previewWeightSlider?.SetValueWithoutNotify(_previewWeight);
+        }
+
+        private static string GetFrameModeLabel(ExpressionFrameMode frameMode)
+        {
+            return frameMode == ExpressionFrameMode.WeightBlend ? WeightBlendModeLabel : SingleFrameModeLabel;
+        }
+
+        private static ExpressionFrameMode GetFrameModeFromLabel(string label)
+        {
+            return label == WeightBlendModeLabel ? ExpressionFrameMode.WeightBlend : ExpressionFrameMode.SingleFrame;
+        }
+
+        private void UpdateFrameModeControls()
+        {
+            var hasModel = _model != null;
+            var frameMode = hasModel ? _model.frameMode : ExpressionFrameMode.SingleFrame;
+
+            _frameModeField?.SetValueWithoutNotify(GetFrameModeLabel(frameMode));
+            _frameModeField?.SetEnabled(hasModel);
+
+            var isWeightBlend = hasModel && frameMode == ExpressionFrameMode.WeightBlend;
+            _weightModeContainer?.EnableInClassList("hidden", !isWeightBlend);
+            if (!isWeightBlend)
+            {
+                _editingFrame = ExpressionEditFrame.Start;
+                SetPreviewWeightWithoutNotify(0f);
+                _blendShapeListView?.SetEditingFrame(_editingFrame);
+            }
+
+            _startFrameButton?.SetEnabled(isWeightBlend);
+            _endFrameButton?.SetEnabled(isWeightBlend);
+            _loadStartFromRendererButton?.SetEnabled(isWeightBlend);
+            _previewWeightSlider?.SetEnabled(isWeightBlend);
+            _startFrameButton?.EnableInClassList("selected", _editingFrame == ExpressionEditFrame.Start);
+            _endFrameButton?.EnableInClassList("selected", _editingFrame == ExpressionEditFrame.End);
+            _previewWeightSlider?.SetValueWithoutNotify(_previewWeight);
+        }
+
         private void UpdateButtonStates()
         {
             var hasModel = _model != null;
@@ -588,6 +777,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _saveAsButton?.SetEnabled(hasModel);
             _resetButton?.SetEnabled(hasModel);
             _newButton?.SetEnabled(_avatarField != null && _avatarField.value != null && _rendererField != null && _rendererField.value != null);
+            _frameModeField?.SetEnabled(hasModel);
+            _startFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
+            _endFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
+            _loadStartFromRendererButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
+            _previewWeightSlider?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
         }
 
         private void ShowMessage(string message, HelpBoxMessageType messageType)
@@ -623,7 +817,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             _previewDirty = false;
-            _previewService?.Sample(_model);
+            _previewService?.Sample(_model, _previewWeight);
         }
 
         private void StopPreview()
@@ -635,6 +829,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private void OnUndoRedoPerformed()
         {
             _blendShapeListView?.Refresh();
+            UpdateFrameModeControls();
             MarkUnsaved();
             RequestPreview();
         }

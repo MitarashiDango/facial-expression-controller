@@ -41,7 +41,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// <summary>
         /// 編集モデルの出力対象ブレンドシェイプをシーン上のアバターへ反映する。
         /// </summary>
-        public void Sample(ExpressionEditModel model)
+        public void Sample(ExpressionEditModel model, float previewWeight = 1f)
         {
             if (_disposed || !_previewEnabled || model == null)
             {
@@ -66,9 +66,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             foreach (var entry in model.entries)
             {
-                if (entry.ShouldOutput && HasPreviewValue(entry))
+                var previewValue = GetPreviewValue(model, entry, previewWeight);
+                if (entry.ShouldOutput && HasPreviewValue(entry, previewValue))
                 {
-                    ApplyEntryWeight(entry);
+                    ApplyEntryWeight(entry, previewValue);
                 }
                 else
                 {
@@ -82,7 +83,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// <summary>
         /// 変更されたブレンドシェイプだけを即時反映する。
         /// </summary>
-        public void SampleEntry(ExpressionEditModel model, BlendShapeEntry entry)
+        public void SampleEntry(ExpressionEditModel model, BlendShapeEntry entry, float previewWeight = 1f)
         {
             if (_disposed || !_previewEnabled || model == null || entry == null)
             {
@@ -105,9 +106,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            if (entry.ShouldOutput && HasPreviewValue(entry))
+            var previewValue = GetPreviewValue(model, entry, previewWeight);
+            if (entry.ShouldOutput && HasPreviewValue(entry, previewValue))
             {
-                ApplyEntryWeight(entry);
+                ApplyEntryWeight(entry, previewValue);
             }
             else
             {
@@ -199,7 +201,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return true;
         }
 
-        private void ApplyEntryWeight(BlendShapeEntry entry)
+        private void ApplyEntryWeight(BlendShapeEntry entry, float value)
         {
             if (!IsValidEntry(entry))
             {
@@ -211,7 +213,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _originalWeights.Add(entry.index, _currentTargetRenderer.GetBlendShapeWeight(entry.index));
             }
 
-            _currentTargetRenderer.SetBlendShapeWeight(entry.index, entry.value);
+            _currentTargetRenderer.SetBlendShapeWeight(entry.index, value);
         }
 
         private void RestoreEntryWeight(BlendShapeEntry entry)
@@ -251,10 +253,20 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 && entry.index < _currentTargetRenderer.sharedMesh.blendShapeCount;
         }
 
-        private bool HasPreviewValue(BlendShapeEntry entry)
+        private static float GetPreviewValue(ExpressionEditModel model, BlendShapeEntry entry, float previewWeight)
+        {
+            if (model != null && model.frameMode == ExpressionFrameMode.WeightBlend)
+            {
+                return Mathf.Lerp(entry.value, entry.endValue, Mathf.Clamp01(previewWeight));
+            }
+
+            return entry.value;
+        }
+
+        private bool HasPreviewValue(BlendShapeEntry entry, float previewValue)
         {
             return _originalWeights.ContainsKey(entry.index)
-                || Mathf.Abs(entry.value - entry.initialValue) > PreviewValueTolerance;
+                || Mathf.Abs(previewValue - entry.initialValue) > PreviewValueTolerance;
         }
     }
 }

@@ -3,6 +3,12 @@
         <ui:VisualElement name="header-container" class="header-container">
             <ui:VisualElement name="target-container" class="target-container" />
             <ui:VisualElement name="toolbar-container" class="toolbar-container" />
+            <ui:VisualElement name="frame-mode-container" class="frame-mode-container" />
+            <ui:VisualElement name="weight-mode-container" class="weight-mode-container hidden">
+                <ui:VisualElement name="frame-tab-container" class="frame-tab-container" />
+                <ui:VisualElement name="weight-preview-container" class="weight-preview-container" />
+                <ui:HelpBox text="Fist はトリガー量にリアルタイム連動します。他ジェスチャーや表情固定中・メニュー選択中は、既存メニューの「表情固定時の表情ウェイト」で調整されます。" message-type="Info" class="weight-mode-note" />
+            </ui:VisualElement>
             <ui:HelpBox name="message-box" text="" message-type="Info" class="hidden" />
             <ui:VisualElement name="filter-container" class="filter-container" />
         </ui:VisualElement>
