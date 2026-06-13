@@ -46,14 +46,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var entryByName = model.entries
                 .GroupBy(entry => entry.name)
                 .ToDictionary(group => group.Key, group => group.First());
-            var editableKeyTimes = new List<float>();
+            var targetBlendShapeKeyTimes = new List<float>();
 
             foreach (var binding in AnimationUtility.GetCurveBindings(clip))
             {
                 var curve = AnimationUtility.GetEditorCurve(clip, binding);
-                if (TryGetEditableBlendShapeEntry(binding, rendererPath, entryByName, out var entry))
+                if (TryGetTargetBlendShapeEntry(binding, rendererPath, entryByName, out var entry))
                 {
-                    AddKeyTimes(editableKeyTimes, curve);
+                    AddKeyTimes(targetBlendShapeKeyTimes, curve);
                     entry.hasSourceCurve = true;
                     entry.sourceCurve = CopyCurve(curve);
                     continue;
@@ -62,13 +62,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 model.preservedCurves.Add(PreservedCurve.FromBinding(binding, curve));
             }
 
-            var frameTimes = NormalizeKeyTimes(editableKeyTimes);
+            var frameTimes = NormalizeKeyTimes(targetBlendShapeKeyTimes);
             ApplyFrameMode(model, frameTimes);
 
             foreach (var binding in AnimationUtility.GetCurveBindings(clip))
             {
                 var curve = AnimationUtility.GetEditorCurve(clip, binding);
-                if (TryGetEditableBlendShapeEntry(binding, rendererPath, entryByName, out var entry))
+                if (TryGetTargetBlendShapeEntry(binding, rendererPath, entryByName, out var entry))
                 {
                     ApplyCurveToEntry(model, entry, curve, frameTimes);
                 }
@@ -86,7 +86,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// <summary>
         /// 編集モデルから AnimationClip を構築する。
         /// </summary>
-        public static AnimationClip ToClip(ExpressionEditModel model, string animationClipName = "")
+        public static AnimationClip ToClip(
+            ExpressionEditModel model,
+            string animationClipName = "",
+            bool includePreservedCurves = true,
+            bool useTargetRendererAsRoot = false)
         {
             if (model == null)
             {
@@ -99,31 +103,39 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 name = !string.IsNullOrEmpty(animationClipName) ? animationClipName : model.sourceClipName,
             };
 
-            foreach (var preservedCurve in model.preservedCurves)
+            var rendererPath = useTargetRendererAsRoot ? "" : GetRendererPath(model);
+            if (includePreservedCurves)
             {
-                var binding = preservedCurve.ToBinding();
-                if (binding.type == null)
+                foreach (var preservedCurve in model.preservedCurves)
                 {
-                    Debug.LogWarning($"[FacialExpressionController] Cannot restore curve type: {preservedCurve.typeName}");
-                    continue;
+                    var binding = preservedCurve.ToBinding();
+                    if (binding.type == null)
+                    {
+                        Debug.LogWarning($"[FacialExpressionController] Cannot restore curve type: {preservedCurve.typeName}");
+                        continue;
+                    }
+
+                    if (ShouldSkipPreservedTargetBlendShapeCurve(model, binding, rendererPath))
+                    {
+                        continue;
+                    }
+
+                    AnimationUtility.SetEditorCurve(animationClip, binding, CopyCurve(preservedCurve.curve));
                 }
 
-                AnimationUtility.SetEditorCurve(animationClip, binding, CopyCurve(preservedCurve.curve));
-            }
-
-            foreach (var preservedCurve in model.preservedObjectReferenceCurves)
-            {
-                var binding = preservedCurve.ToBinding();
-                if (binding.type == null)
+                foreach (var preservedCurve in model.preservedObjectReferenceCurves)
                 {
-                    Debug.LogWarning($"[FacialExpressionController] Cannot restore object reference curve type: {preservedCurve.typeName}");
-                    continue;
-                }
+                    var binding = preservedCurve.ToBinding();
+                    if (binding.type == null)
+                    {
+                        Debug.LogWarning($"[FacialExpressionController] Cannot restore object reference curve type: {preservedCurve.typeName}");
+                        continue;
+                    }
 
-                AnimationUtility.SetObjectReferenceCurve(animationClip, binding, preservedCurve.ToKeyframes());
+                    AnimationUtility.SetObjectReferenceCurve(animationClip, binding, preservedCurve.ToKeyframes());
+                }
             }
 
-            var rendererPath = GetRendererPath(model);
             foreach (var entry in model.entries)
             {
                 if (!entry.ShouldOutput)
@@ -221,7 +233,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return MiscUtil.GetPathInHierarchy(model.targetRenderer != null ? model.targetRenderer.gameObject : null, model.avatarRootObject);
         }
 
-        private static bool TryGetEditableBlendShapeEntry(
+        private static bool TryGetTargetBlendShapeEntry(
             EditorCurveBinding binding,
             string rendererPath,
             IReadOnlyDictionary<string, BlendShapeEntry> entryByName,
@@ -242,13 +254,24 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return false;
             }
 
-            if (entry.IsSystemExcluded)
+            return true;
+        }
+
+        private static bool ShouldSkipPreservedTargetBlendShapeCurve(
+            ExpressionEditModel model,
+            EditorCurveBinding binding,
+            string rendererPath)
+        {
+            if (model == null
+                || binding.path != rendererPath
+                || binding.type != typeof(SkinnedMeshRenderer)
+                || !binding.propertyName.StartsWith("blendShape.", StringComparison.Ordinal))
             {
-                entry = null;
                 return false;
             }
 
-            return true;
+            var blendShapeName = binding.propertyName.Substring("blendShape.".Length);
+            return model.entries.Any(entry => entry.name == blendShapeName);
         }
 
         private static void AddKeyTimes(ICollection<float> keyTimes, AnimationCurve curve)
@@ -324,11 +347,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return CopyCurve(entry.sourceCurve);
             }
 
-            if (model.hasSourceClip && !entry.hasSourceCurve && !IsEntryEditedFromInitial(model, entry))
-            {
-                return null;
-            }
-
             return CreateBlendShapeCurve(model, entry);
         }
 
@@ -340,17 +358,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 && model.frameMode == entry.sourceFrameMode
                 && Approximately(entry.value, entry.sourceValue)
                 && Approximately(entry.endValue, entry.sourceEndValue);
-        }
-
-        private static bool IsEntryEditedFromInitial(ExpressionEditModel model, BlendShapeEntry entry)
-        {
-            if (!Approximately(entry.value, entry.initialValue))
-            {
-                return true;
-            }
-
-            return model.frameMode == ExpressionFrameMode.WeightBlend
-                && !Approximately(entry.endValue, entry.initialValue);
         }
 
         private static bool Approximately(float a, float b)

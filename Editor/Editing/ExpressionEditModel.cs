@@ -59,10 +59,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public float sourceEndValue;
         public AnimationCurve sourceCurve;
         public BlendShapeSystemExclusionReason systemExclusion;
+        public bool systemExclusionUnlocked;
         public bool userExcluded;
 
         public bool IsSystemExcluded => systemExclusion != BlendShapeSystemExclusionReason.None;
-        public bool ShouldOutput => !IsSystemExcluded && !userExcluded;
+        public bool IsSystemLocked => IsSystemExcluded && !systemExclusionUnlocked;
+        public bool ShouldOutput => !IsSystemLocked && !userExcluded;
     }
 
     [Serializable]
