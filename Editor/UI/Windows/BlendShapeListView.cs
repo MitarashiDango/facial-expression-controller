@@ -17,6 +17,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private string _searchText = "";
         private bool _showChangedOnly;
         private bool _showEditableOnly;
+        private ExpressionEditFrame _editingFrame = ExpressionEditFrame.Start;
         private int _activeUndoGroup = -1;
 
         public event Action Changed;
@@ -49,6 +50,17 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public void SetShowEditableOnly(bool showEditableOnly)
         {
             _showEditableOnly = showEditableOnly;
+            Refresh();
+        }
+
+        public void SetEditingFrame(ExpressionEditFrame editingFrame)
+        {
+            if (_editingFrame == editingFrame)
+            {
+                return;
+            }
+
+            _editingFrame = editingFrame;
             Refresh();
         }
 
@@ -195,20 +207,45 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             RecordSingleUndo();
             var clampedValue = Mathf.Clamp(value, 0f, 100f);
-            if (Mathf.Abs(entry.value - clampedValue) <= ChangedTolerance)
+            if (Mathf.Abs(GetDisplayValue(entry) - clampedValue) <= ChangedTolerance)
             {
                 return;
             }
 
-            entry.value = clampedValue;
-            if (_model.frameMode == ExpressionFrameMode.SingleFrame)
-            {
-                entry.endValue = clampedValue;
-            }
+            SetDisplayValue(entry, clampedValue);
 
             EditorUtility.SetDirty(_model);
             PreviewValueChanged?.Invoke(entry);
             Changed?.Invoke();
+        }
+
+        private float GetDisplayValue(BlendShapeEntry entry)
+        {
+            if (_model != null
+                && _model.frameMode == ExpressionFrameMode.WeightBlend
+                && _editingFrame == ExpressionEditFrame.End)
+            {
+                return entry.endValue;
+            }
+
+            return entry.value;
+        }
+
+        private void SetDisplayValue(BlendShapeEntry entry, float value)
+        {
+            if (_model != null
+                && _model.frameMode == ExpressionFrameMode.WeightBlend
+                && _editingFrame == ExpressionEditFrame.End)
+            {
+                entry.endValue = value;
+                return;
+            }
+
+            entry.value = value;
+            if (_model == null || _model.frameMode == ExpressionFrameMode.SingleFrame)
+            {
+                entry.endValue = value;
+            }
         }
 
         private static bool CanEditValue(BlendShapeEntry entry)
@@ -301,10 +338,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 var isSystemExcluded = entry.IsSystemExcluded;
                 var isSystemLocked = entry.IsSystemLocked;
                 var canEditValue = CanEditValue(entry);
+                var displayValue = _owner.GetDisplayValue(entry);
                 _nameLabel.text = entry.name;
                 _nameLabel.tooltip = entry.name;
-                _slider.SetValueWithoutNotify(entry.value);
-                _valueField.SetValueWithoutNotify(entry.value);
+                _slider.SetValueWithoutNotify(displayValue);
+                _valueField.SetValueWithoutNotify(displayValue);
                 _outputToggle.SetValueWithoutNotify(entry.ShouldOutput);
                 _reasonLabel.text = GetSystemExclusionText(entry);
 
@@ -334,7 +372,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
                 _owner.SetValue(_entry, evt.newValue);
                 _ignoreChange = true;
-                _valueField.SetValueWithoutNotify(_entry.value);
+                _valueField.SetValueWithoutNotify(_owner.GetDisplayValue(_entry));
                 EnableInClassList("changed", IsChanged(_entry));
                 _ignoreChange = false;
             }
@@ -348,8 +386,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
                 _owner.SetValue(_entry, evt.newValue);
                 _ignoreChange = true;
-                _slider.SetValueWithoutNotify(_entry.value);
-                _valueField.SetValueWithoutNotify(_entry.value);
+                var displayValue = _owner.GetDisplayValue(_entry);
+                _slider.SetValueWithoutNotify(displayValue);
+                _valueField.SetValueWithoutNotify(displayValue);
                 EnableInClassList("changed", IsChanged(_entry));
                 _ignoreChange = false;
             }

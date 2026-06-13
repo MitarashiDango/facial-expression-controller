@@ -15,7 +15,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public static IReadOnlyList<string> MmdBlendShapes => GetMmdBlendShapes();
 
         /// <summary>
-        /// 対象 SMR の全ブレンドシェイプを除外理由付きで取得する。
+        /// 対象 Skinned Mesh Renderer の全ブレンドシェイプを除外理由付きで取得する。
         /// </summary>
         public static List<BlendShapeCatalogEntry> Build(SkinnedMeshRenderer smr, VRCAvatarDescriptor ad, IEnumerable<string> userExcludedBlendShapes = null)
         {

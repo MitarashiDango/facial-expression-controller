@@ -13,7 +13,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private const float KeyTimeTolerance = 0.0001f;
 
         /// <summary>
-        /// 対象 SMR の現在値から編集モデルを作成する。
+        /// 対象 Skinned Mesh Renderer の現在値から編集モデルを作成する。
         /// </summary>
         public static ExpressionEditModel CreateModel(GameObject avatarRootObject, SkinnedMeshRenderer targetRenderer, IEnumerable<string> userExcludedBlendShapes = null)
         {
@@ -140,6 +140,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             {
                 if (!entry.ShouldOutput)
                 {
+                    RestoreLockedSystemSourceCurve(animationClip, rendererPath, entry);
                     continue;
                 }
 
@@ -355,9 +356,20 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return model.hasSourceClip
                 && entry.hasSourceCurve
                 && entry.sourceCurve != null
+                && model.frameMode == ExpressionFrameMode.SingleFrame
                 && model.frameMode == entry.sourceFrameMode
                 && Approximately(entry.value, entry.sourceValue)
                 && Approximately(entry.endValue, entry.sourceEndValue);
+        }
+
+        private static void RestoreLockedSystemSourceCurve(AnimationClip animationClip, string rendererPath, BlendShapeEntry entry)
+        {
+            if (!entry.IsSystemLocked || !entry.hasSourceCurve || entry.sourceCurve == null)
+            {
+                return;
+            }
+
+            animationClip.SetCurve(rendererPath, typeof(SkinnedMeshRenderer), $"blendShape.{entry.name}", CopyCurve(entry.sourceCurve));
         }
 
         private static bool Approximately(float a, float b)
