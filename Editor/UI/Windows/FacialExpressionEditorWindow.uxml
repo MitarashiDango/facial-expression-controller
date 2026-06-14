@@ -9,6 +9,7 @@
                 <ui:VisualElement name="weight-preview-container" class="weight-preview-container" />
                 <ui:HelpBox text="Fist はトリガー量にリアルタイム連動します。他ジェスチャーや表情固定中・メニュー選択中は、既存メニューの「表情固定時の表情ウェイト」で調整されます。" message-type="Info" class="weight-mode-note" />
             </ui:VisualElement>
+            <ui:VisualElement name="thumbnail-container" class="thumbnail-container" />
             <ui:HelpBox name="message-box" text="" message-type="Info" class="hidden" />
             <ui:VisualElement name="filter-container" class="filter-container" />
         </ui:VisualElement>

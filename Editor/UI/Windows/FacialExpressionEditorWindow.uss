@@ -90,6 +90,97 @@
     margin-top: 4px;
 }
 
+.thumbnail-container {
+    margin-bottom: 6px;
+    min-width: 0;
+}
+
+.thumbnail-foldout {
+    min-width: 0;
+}
+
+.thumbnail-body {
+    flex-direction: row;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.thumbnail-controls {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.thumbnail-preview {
+    width: 132px;
+    flex-grow: 0;
+    flex-shrink: 0;
+    margin-left: 8px;
+    margin-top: 4px;
+}
+
+.thumbnail-settings,
+.thumbnail-assignment {
+    margin-top: 4px;
+    min-width: 0;
+}
+
+.thumbnail-field {
+    min-width: 0;
+}
+
+.thumbnail-action-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 4px;
+    min-width: 0;
+}
+
+.thumbnail-group-row {
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+}
+
+.thumbnail-group-row > .thumbnail-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+.thumbnail-reload-button {
+    min-width: 82px;
+    margin-left: 4px;
+}
+
+.thumbnail-button {
+    align-self: flex-start;
+    min-width: 112px;
+    margin-top: 4px;
+    margin-right: 4px;
+}
+
+.thumbnail-preview-image {
+    width: 132px;
+    height: 132px;
+    background-color: rgba(64, 64, 64, 0.25);
+}
+
+.thumbnail-preview-button {
+    width: 132px;
+    min-width: 132px;
+    max-width: 132px;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.thumbnail-path {
+    margin-left: 184px;
+    margin-bottom: 3px;
+    color: rgb(170, 170, 170);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .filter-container {
     flex-direction: row;
     align-items: center;
