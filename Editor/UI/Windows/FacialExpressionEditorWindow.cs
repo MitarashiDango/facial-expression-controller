@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using nadena.dev.ndmf.localization;
 using UnityEditor;
@@ -42,6 +43,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private ExpressionEditModel _model;
         private BlendShapeListView _blendShapeListView;
+        private ThumbnailCaptureView _thumbnailCaptureView;
         private ExpressionPreviewService _previewService;
         private AnimationClip _currentClip;
         private string _currentAssetPath;
@@ -108,6 +110,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             StopPreview();
             _previewService?.Dispose();
             _previewService = null;
+            _thumbnailCaptureView?.Dispose();
+            _thumbnailCaptureView = null;
 
             if (_model != null)
             {
@@ -142,6 +146,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var frameModeContainer = root.Q<VisualElement>("frame-mode-container");
             var frameTabContainer = root.Q<VisualElement>("frame-tab-container");
             var weightPreviewContainer = root.Q<VisualElement>("weight-preview-container");
+            var thumbnailContainer = root.Q<VisualElement>("thumbnail-container");
             _weightModeContainer = root.Q<VisualElement>("weight-mode-container");
             _listContainer = root.Q<VisualElement>("blendshape-list-container");
             _emptyLabel = root.Q<Label>("empty-label");
@@ -243,6 +248,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _filterMenu.menu.AppendAction("編集・出力対象のみ表示", _ => ToggleEditableOnlyFilter(), GetEditableOnlyFilterStatus);
             UpdateFilterMenuText();
             filterContainer.Add(_filterMenu);
+
+            _thumbnailCaptureView = new ThumbnailCaptureView(thumbnailContainer);
+            _thumbnailCaptureView.AutoFrameRequested += AutoFrameThumbnail;
+            _thumbnailCaptureView.PreviewRequested += PreviewThumbnail;
+            _thumbnailCaptureView.CaptureRequested += CaptureThumbnail;
+            _thumbnailCaptureView.MessageRequested += ShowMessage;
 
             UpdateButtonStates();
             UpdateFrameModeControls();
@@ -435,6 +446,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             RebuildBlendShapeList();
+            _thumbnailCaptureView?.SetModel(_model);
             UpdateFrameModeControls();
             if (markDirty)
             {
@@ -443,6 +455,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             UpdateButtonStates();
             RequestPreview();
+            if (_model != null)
+            {
+                UpdateThumbnailPreview(false);
+            }
         }
 
         private void RebuildBlendShapeList()
@@ -824,6 +840,200 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             _previewDirty = false;
             _previewService?.Stop();
+        }
+
+        private void AutoFrameThumbnail()
+        {
+            if (_model == null)
+            {
+                ShowMessage("距離・角度・オフセットを自動調整する表情がありません。", HelpBoxMessageType.Warning);
+                return;
+            }
+
+            var previousPreviewEnabled = SampleThumbnailPose();
+            try
+            {
+                if (ThumbnailCaptureService.TryCalculateAutoSettings(
+                    _model,
+                    _thumbnailCaptureView.Settings,
+                    out var calculatedSettings,
+                    out var detailMessage))
+                {
+                    _thumbnailCaptureView.ApplySettings(calculatedSettings, true);
+                    UpdateThumbnailPreview(false);
+                    var message = string.IsNullOrEmpty(detailMessage)
+                        ? "距離・角度・オフセットを自動調整しました。"
+                        : $"距離・角度・オフセットを自動調整しました。{detailMessage}";
+                    ShowMessage(message, HelpBoxMessageType.Info);
+                }
+                else
+                {
+                    ShowMessage(detailMessage, HelpBoxMessageType.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[FacialExpressionController] Thumbnail auto framing failed: {ex}");
+                ShowMessage("距離・角度・オフセットの自動調整に失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+            }
+            finally
+            {
+                RestoreThumbnailPose(previousPreviewEnabled);
+            }
+        }
+
+        private void PreviewThumbnail()
+        {
+            UpdateThumbnailPreview(true);
+        }
+
+        private void UpdateThumbnailPreview(bool showMessage)
+        {
+            if (_model == null)
+            {
+                if (showMessage)
+                {
+                    ShowMessage("プレビューする表情がありません。", HelpBoxMessageType.Warning);
+                }
+
+                return;
+            }
+
+            var previousPreviewEnabled = SampleThumbnailPose();
+            try
+            {
+                var previewTexture = ThumbnailCaptureService.Capture(_model, _thumbnailCaptureView.Settings);
+                _thumbnailCaptureView.SetPreviewTexture(previewTexture);
+                if (showMessage)
+                {
+                    ShowMessage("サムネイルプレビューを更新しました。", HelpBoxMessageType.Info);
+                }
+            }
+            catch (Exception ex)
+            {
+                _thumbnailCaptureView.SetPreviewTexture(null);
+                if (showMessage)
+                {
+                    Debug.LogError($"[FacialExpressionController] Thumbnail preview failed: {ex}");
+                    ShowMessage("サムネイルプレビューに失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+                }
+            }
+            finally
+            {
+                RestoreThumbnailPose(previousPreviewEnabled);
+            }
+        }
+
+        private void CaptureThumbnail()
+        {
+            if (_model == null)
+            {
+                ShowMessage("撮影する表情がありません。", HelpBoxMessageType.Warning);
+                return;
+            }
+
+            var settings = _thumbnailCaptureView.Settings;
+            var filePath = EditorUtility.SaveFilePanelInProject(
+                "サムネイルを保存",
+                GetDefaultThumbnailFileName(),
+                "png",
+                "サムネイル PNG の保存先とファイル名を選択してください。",
+                "Assets");
+            if (string.IsNullOrEmpty(filePath))
+            {
+                return;
+            }
+
+            ThumbnailCaptureService.SaveSettings(_model.avatarRootObject, settings);
+
+            var previousPreviewEnabled = SampleThumbnailPose();
+            Texture2D capturedTexture = null;
+            try
+            {
+                capturedTexture = ThumbnailCaptureService.Capture(_model, settings);
+                var savedTexture = ThumbnailCaptureService.SavePngAsset(
+                    capturedTexture,
+                    filePath,
+                    settings.backgroundMode == ThumbnailBackgroundMode.Transparent);
+                _thumbnailCaptureView.SetCapturedTexture(savedTexture, filePath);
+                ShowMessage("サムネイルを保存しました。", HelpBoxMessageType.Info);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[FacialExpressionController] Thumbnail capture failed: {ex}");
+                ShowMessage("サムネイル撮影に失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+            }
+            finally
+            {
+                if (capturedTexture != null)
+                {
+                    DestroyImmediate(capturedTexture);
+                }
+
+                RestoreThumbnailPose(previousPreviewEnabled);
+            }
+        }
+
+        private string GetDefaultThumbnailFileName()
+        {
+            var avatarName = _model != null && _model.avatarRootObject != null
+                ? _model.avatarRootObject.name
+                : "Avatar";
+            var fileName = $"Icon_{avatarName}";
+            var clip = GetSavedEditingClip();
+
+            if (clip != null)
+            {
+                fileName += $"_{clip.name}";
+            }
+
+            return SanitizeFileName(fileName);
+        }
+
+        private AnimationClip GetSavedEditingClip()
+        {
+            if (IsSavedAsset(_currentClip))
+            {
+                return _currentClip;
+            }
+
+            var selectedClip = _clipField?.value as AnimationClip;
+            return IsSavedAsset(selectedClip) ? selectedClip : null;
+        }
+
+        private static bool IsSavedAsset(UnityEngine.Object asset)
+        {
+            return asset != null && !string.IsNullOrEmpty(AssetDatabase.GetAssetPath(asset));
+        }
+
+        private static string SanitizeFileName(string fileName)
+        {
+            foreach (var invalidChar in Path.GetInvalidFileNameChars())
+            {
+                fileName = fileName.Replace(invalidChar, '_');
+            }
+
+            return fileName;
+        }
+
+        private bool SampleThumbnailPose()
+        {
+            var previousPreviewEnabled = _previewService != null && _previewService.PreviewEnabled;
+            if (_previewService != null)
+            {
+                _previewService.PreviewEnabled = true;
+                _previewService.Sample(_model, _previewWeight);
+            }
+
+            return previousPreviewEnabled;
+        }
+
+        private void RestoreThumbnailPose(bool previousPreviewEnabled)
+        {
+            if (_previewService != null && !previousPreviewEnabled)
+            {
+                _previewService.PreviewEnabled = false;
+            }
         }
 
         private void OnUndoRedoPerformed()
