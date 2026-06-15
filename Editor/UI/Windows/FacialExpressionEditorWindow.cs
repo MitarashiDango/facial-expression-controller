@@ -60,6 +60,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private int _partialImportPreviewRequestVersion;
         private double _partialImportPreviewCaptureReadyTime;
         private PartialImportPreviewCapture _pendingPartialImportPreviewCapture;
+        private double _thumbnailCaptureReadyTime;
+        private PendingThumbnailCapture _pendingThumbnailCapture;
 
         [MenuItem("Tools/Facial Expression Controller/表情アニメーションエディター")]
         public static void Open()
@@ -118,6 +120,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             EditorApplication.delayCall -= RetryBuildGui;
             _guiBuildRetryScheduled = false;
             CancelPendingPartialImportPreviewCapture();
+            CancelPendingThumbnailCapture();
             StopPreview();
             _previewService?.Dispose();
             _previewService = null;
@@ -461,6 +464,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void SetModel(GameObject avatarRootObject, SkinnedMeshRenderer renderer, AnimationClip sourceClip, bool markDirty)
         {
+            CancelPendingThumbnailCapture();
             StopPreview();
 
             if (_model != null)
@@ -1119,6 +1123,35 @@ namespace MitarashiDango.FacialExpressionController.Editor
             public GameObject PreviewAvatarRootObject { get; }
         }
 
+        private enum PendingThumbnailCaptureKind
+        {
+            Preview,
+            Save,
+        }
+
+        private sealed class PendingThumbnailCapture
+        {
+            public PendingThumbnailCapture(
+                PendingThumbnailCaptureKind kind,
+                ThumbnailCaptureSettings settings,
+                string filePath,
+                bool showMessage,
+                bool previousPreviewEnabled)
+            {
+                Kind = kind;
+                Settings = settings;
+                FilePath = filePath;
+                ShowMessage = showMessage;
+                PreviousPreviewEnabled = previousPreviewEnabled;
+            }
+
+            public PendingThumbnailCaptureKind Kind { get; }
+            public ThumbnailCaptureSettings Settings { get; }
+            public string FilePath { get; }
+            public bool ShowMessage { get; }
+            public bool PreviousPreviewEnabled { get; }
+        }
+
         private void ToggleChangedOnlyFilter()
         {
             _showChangedOnly = !_showChangedOnly;
@@ -1322,6 +1355,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _saveAsButton?.SetEnabled(hasModel);
             _resetButton?.SetEnabled(hasModel);
             _newButton?.SetEnabled(_avatarField != null && _avatarField.value != null && _rendererField != null && _rendererField.value != null);
+            _previewToggle?.SetEnabled(_pendingThumbnailCapture == null);
             _frameModeField?.SetEnabled(hasModel);
             _startFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
             _endFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
@@ -1357,6 +1391,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 CompletePendingPartialImportPreviewCapture();
             }
 
+            if (_pendingThumbnailCapture != null
+                && EditorApplication.timeSinceStartup >= _thumbnailCaptureReadyTime)
+            {
+                CompletePendingThumbnailCapture();
+            }
+
             if (_previewDirty
                 && EditorApplication.timeSinceStartup - _lastPreviewRequestTime >= PreviewDebounceSeconds)
             {
@@ -1381,6 +1421,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var previousPreviewEnabled = SampleThumbnailPose();
+            var shouldUpdatePreview = false;
+            var resultMessage = "";
+            var resultMessageType = HelpBoxMessageType.Info;
             try
             {
                 if (ThumbnailCaptureService.TryCalculateAutoSettings(
@@ -1390,25 +1433,36 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     out var detailMessage))
                 {
                     _thumbnailCaptureView.ApplySettings(calculatedSettings, true);
-                    UpdateThumbnailPreview(false);
-                    var message = string.IsNullOrEmpty(detailMessage)
+                    shouldUpdatePreview = true;
+                    resultMessage = string.IsNullOrEmpty(detailMessage)
                         ? "距離・角度・オフセットを自動調整しました。"
                         : $"距離・角度・オフセットを自動調整しました。{detailMessage}";
-                    ShowMessage(message, HelpBoxMessageType.Info);
                 }
                 else
                 {
-                    ShowMessage(detailMessage, HelpBoxMessageType.Warning);
+                    resultMessage = detailMessage;
+                    resultMessageType = HelpBoxMessageType.Warning;
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[FacialExpressionController] Thumbnail auto framing failed: {ex}");
-                ShowMessage("距離・角度・オフセットの自動調整に失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+                resultMessage = "距離・角度・オフセットの自動調整に失敗しました。コンソールを確認してください。";
+                resultMessageType = HelpBoxMessageType.Error;
             }
             finally
             {
                 RestoreThumbnailPose(previousPreviewEnabled);
+            }
+
+            if (!string.IsNullOrEmpty(resultMessage))
+            {
+                ShowMessage(resultMessage, resultMessageType);
+            }
+
+            if (shouldUpdatePreview)
+            {
+                UpdateThumbnailPreview(false);
             }
         }
 
@@ -1429,29 +1483,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            var previousPreviewEnabled = SampleThumbnailPose();
-            try
-            {
-                var previewTexture = ThumbnailCaptureService.Capture(_model, _thumbnailCaptureView.Settings);
-                _thumbnailCaptureView.SetPreviewTexture(previewTexture);
-                if (showMessage)
-                {
-                    ShowMessage("サムネイルプレビューを更新しました。", HelpBoxMessageType.Info);
-                }
-            }
-            catch (Exception ex)
-            {
-                _thumbnailCaptureView.SetPreviewTexture(null);
-                if (showMessage)
-                {
-                    Debug.LogError($"[FacialExpressionController] Thumbnail preview failed: {ex}");
-                    ShowMessage("サムネイルプレビューに失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
-                }
-            }
-            finally
-            {
-                RestoreThumbnailPose(previousPreviewEnabled);
-            }
+            BeginPendingThumbnailCapture(PendingThumbnailCaptureKind.Preview, _thumbnailCaptureView.Settings, "", showMessage);
         }
 
         private void CaptureThumbnail()
@@ -1476,22 +1508,92 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             ThumbnailCaptureService.SaveSettings(_model.avatarRootObject, settings);
 
+            BeginPendingThumbnailCapture(PendingThumbnailCaptureKind.Save, settings, filePath, true);
+        }
+
+        private void BeginPendingThumbnailCapture(
+            PendingThumbnailCaptureKind kind,
+            ThumbnailCaptureSettings settings,
+            string filePath,
+            bool showMessage)
+        {
+            if (_model == null)
+            {
+                return;
+            }
+
+            CancelPendingThumbnailCapture();
+
             var previousPreviewEnabled = SampleThumbnailPose();
+            _pendingThumbnailCapture = new PendingThumbnailCapture(
+                kind,
+                settings,
+                filePath,
+                showMessage,
+                previousPreviewEnabled);
+            _thumbnailCaptureReadyTime = EditorApplication.timeSinceStartup + PreviewDebounceSeconds;
+
+            var busyMessage = kind == PendingThumbnailCaptureKind.Save
+                ? "サムネイル撮影中..."
+                : "サムネイルプレビュー更新中...";
+            _thumbnailCaptureView?.SetBusy(true, busyMessage);
+            EditorUtility.DisplayProgressBar("サムネイル撮影", "表情プレビューを一時適用しています...", 0.35f);
+            UpdateButtonStates();
+            EditorApplication.QueuePlayerLoopUpdate();
+            SceneView.RepaintAll();
+        }
+
+        private void CompletePendingThumbnailCapture()
+        {
+            var capture = _pendingThumbnailCapture;
+            if (capture == null)
+            {
+                return;
+            }
+
+            _pendingThumbnailCapture = null;
             Texture2D capturedTexture = null;
             try
             {
-                capturedTexture = ThumbnailCaptureService.Capture(_model, settings);
-                var savedTexture = ThumbnailCaptureService.SavePngAsset(
-                    capturedTexture,
-                    filePath,
-                    settings.backgroundMode == ThumbnailBackgroundMode.Transparent);
-                _thumbnailCaptureView.SetCapturedTexture(savedTexture, filePath);
-                ShowMessage("サムネイルを保存しました。", HelpBoxMessageType.Info);
+                EditorUtility.DisplayProgressBar("サムネイル撮影", "レンダリングしています...", 0.75f);
+                capturedTexture = ThumbnailCaptureService.Capture(_model, capture.Settings);
+
+                if (capture.Kind == PendingThumbnailCaptureKind.Preview)
+                {
+                    _thumbnailCaptureView.SetPreviewTexture(capturedTexture);
+                    capturedTexture = null;
+                    if (capture.ShowMessage)
+                    {
+                        ShowMessage("サムネイルプレビューを更新しました。", HelpBoxMessageType.Info);
+                    }
+                }
+                else
+                {
+                    EditorUtility.DisplayProgressBar("サムネイル撮影", "PNG を保存しています...", 0.95f);
+                    var savedTexture = ThumbnailCaptureService.SavePngAsset(
+                        capturedTexture,
+                        capture.FilePath,
+                        capture.Settings.backgroundMode == ThumbnailBackgroundMode.Transparent);
+                    _thumbnailCaptureView.SetCapturedTexture(savedTexture, capture.FilePath);
+                    ShowMessage("サムネイルを保存しました。", HelpBoxMessageType.Info);
+                }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[FacialExpressionController] Thumbnail capture failed: {ex}");
-                ShowMessage("サムネイル撮影に失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+                if (capture.Kind == PendingThumbnailCaptureKind.Preview)
+                {
+                    _thumbnailCaptureView.SetPreviewTexture(null);
+                    if (capture.ShowMessage)
+                    {
+                        Debug.LogError($"[FacialExpressionController] Thumbnail preview failed: {ex}");
+                        ShowMessage("サムネイルプレビューに失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+                    }
+                }
+                else
+                {
+                    Debug.LogError($"[FacialExpressionController] Thumbnail capture failed: {ex}");
+                    ShowMessage("サムネイル撮影に失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+                }
             }
             finally
             {
@@ -1500,8 +1602,29 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     DestroyImmediate(capturedTexture);
                 }
 
-                RestoreThumbnailPose(previousPreviewEnabled);
+                RestoreThumbnailPose(capture.PreviousPreviewEnabled);
+                EndPendingThumbnailCaptureUi();
             }
+        }
+
+        private void CancelPendingThumbnailCapture()
+        {
+            var capture = _pendingThumbnailCapture;
+            if (capture == null)
+            {
+                return;
+            }
+
+            _pendingThumbnailCapture = null;
+            RestoreThumbnailPose(capture.PreviousPreviewEnabled);
+            EndPendingThumbnailCaptureUi();
+        }
+
+        private void EndPendingThumbnailCaptureUi()
+        {
+            _thumbnailCaptureView?.SetBusy(false, "");
+            EditorUtility.ClearProgressBar();
+            UpdateButtonStates();
         }
 
         private string GetDefaultThumbnailFileName()
@@ -1560,7 +1683,20 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void RestoreThumbnailPose(bool previousPreviewEnabled)
         {
-            if (_previewService != null && !previousPreviewEnabled)
+            if (_previewService == null)
+            {
+                return;
+            }
+
+            var shouldEnablePreview = _previewToggle != null
+                ? _previewToggle.value
+                : previousPreviewEnabled;
+            if (shouldEnablePreview)
+            {
+                _previewService.PreviewEnabled = true;
+                _previewService.Sample(_model, _previewWeight);
+            }
+            else
             {
                 _previewService.PreviewEnabled = false;
             }
