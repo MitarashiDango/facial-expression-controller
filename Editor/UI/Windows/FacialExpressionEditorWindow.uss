@@ -95,6 +95,134 @@
     min-width: 0;
 }
 
+.partial-import-container {
+    margin-bottom: 6px;
+    min-width: 0;
+}
+
+.partial-import-foldout {
+    min-width: 0;
+}
+
+.partial-import-source-row {
+    min-width: 0;
+}
+
+.partial-import-field {
+    min-width: 0;
+}
+
+.partial-import-action-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 4px;
+    min-width: 0;
+}
+
+.partial-import-search {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 120px;
+    margin-right: 4px;
+}
+
+.partial-import-button {
+    flex-shrink: 0;
+    min-width: 104px;
+    margin-left: 4px;
+}
+
+.partial-import-summary {
+    margin-top: 4px;
+    color: rgb(170, 170, 170);
+}
+
+.partial-import-message {
+    margin-top: 4px;
+}
+
+.partial-import-content-row {
+    flex-direction: row;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.partial-import-list-container {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.partial-import-list {
+    height: 172px;
+    min-height: 84px;
+    margin-top: 4px;
+    min-width: 0;
+}
+
+.partial-import-row {
+    flex-direction: row;
+    align-items: center;
+    height: 28px;
+    padding-left: 4px;
+    padding-right: 4px;
+    min-width: 0;
+}
+
+.partial-import-row.disabled {
+    opacity: 0.72;
+}
+
+.partial-import-toggle {
+    width: 24px;
+    flex-shrink: 0;
+}
+
+.partial-import-name {
+    min-width: 120px;
+    flex-grow: 1;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    -unity-text-align: middle-left;
+}
+
+.partial-import-value {
+    width: 58px;
+    flex-shrink: 0;
+    margin-left: 6px;
+    -unity-text-align: middle-right;
+}
+
+.partial-import-reason {
+    width: 96px;
+    flex-shrink: 0;
+    margin-left: 8px;
+    color: rgb(190, 160, 80);
+    -unity-text-align: middle-left;
+}
+
+.partial-import-preview {
+    width: 132px;
+    flex-grow: 0;
+    flex-shrink: 0;
+    margin-left: 8px;
+    margin-top: 4px;
+}
+
+.partial-import-preview-title {
+    height: 18px;
+    color: rgb(170, 170, 170);
+    -unity-text-align: middle-center;
+}
+
+.partial-import-preview-image {
+    width: 132px;
+    height: 132px;
+    background-color: rgba(64, 64, 64, 0.25);
+}
+
 .thumbnail-foldout {
     min-width: 0;
 }

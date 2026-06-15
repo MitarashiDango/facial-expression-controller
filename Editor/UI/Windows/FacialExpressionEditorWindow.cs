@@ -16,6 +16,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private const string MainUxmlPath = "Packages/com.matcha-soft.facial-expression-controller/Editor/UI/Windows/FacialExpressionEditorWindow.uxml";
         private const string MainUssPath = "Packages/com.matcha-soft.facial-expression-controller/Editor/UI/Windows/FacialExpressionEditorWindow.uss";
         private const double PreviewDebounceSeconds = 0.016d;
+        private const float PartialImportPreviewOffscreenOffset = 10000f;
         private const string SingleFrameModeLabel = "1 フレーム";
         private const string WeightBlendModeLabel = "ウェイト連動（2 フレーム）";
         private static readonly List<string> FrameModeChoices = new List<string> { SingleFrameModeLabel, WeightBlendModeLabel };
@@ -44,6 +45,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private ExpressionEditModel _model;
         private BlendShapeListView _blendShapeListView;
         private ThumbnailCaptureView _thumbnailCaptureView;
+        private PartialImportView _partialImportView;
         private ExpressionPreviewService _previewService;
         private AnimationClip _currentClip;
         private string _currentAssetPath;
@@ -53,7 +55,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private bool _previewDirty;
         private bool _showChangedOnly;
         private bool _showEditableOnly;
+        private bool _guiBuildRetryScheduled;
         private double _lastPreviewRequestTime;
+        private int _partialImportPreviewRequestVersion;
+        private double _partialImportPreviewCaptureReadyTime;
+        private PartialImportPreviewCapture _pendingPartialImportPreviewCapture;
 
         [MenuItem("Tools/Facial Expression Controller/表情アニメーションエディター")]
         public static void Open()
@@ -99,19 +105,26 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _previewService = new ExpressionPreviewService();
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
             EditorApplication.update += OnEditorUpdate;
-            BuildGui();
-            TryInitializeFromSelection();
+            if (BuildGui())
+            {
+                TryInitializeFromSelection();
+            }
         }
 
         private void OnDisable()
         {
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             EditorApplication.update -= OnEditorUpdate;
+            EditorApplication.delayCall -= RetryBuildGui;
+            _guiBuildRetryScheduled = false;
+            CancelPendingPartialImportPreviewCapture();
             StopPreview();
             _previewService?.Dispose();
             _previewService = null;
             _thumbnailCaptureView?.Dispose();
             _thumbnailCaptureView = null;
+            _partialImportView?.Dispose();
+            _partialImportView = null;
 
             if (_model != null)
             {
@@ -120,15 +133,16 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
         }
 
-        private void BuildGui()
+        private bool BuildGui()
         {
             rootVisualElement.Clear();
 
             var mainUxmlAsset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(MainUxmlPath);
             if (mainUxmlAsset == null)
             {
-                Debug.LogError($"[FacialExpressionController] Cannot load UXML file: {MainUxmlPath}");
-                return;
+                ScheduleBuildGuiRetry();
+                Debug.LogWarning($"[FacialExpressionController] UXML file is not ready yet: {MainUxmlPath}");
+                return false;
             }
 
             var root = mainUxmlAsset.CloneTree();
@@ -147,6 +161,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var frameTabContainer = root.Q<VisualElement>("frame-tab-container");
             var weightPreviewContainer = root.Q<VisualElement>("weight-preview-container");
             var thumbnailContainer = root.Q<VisualElement>("thumbnail-container");
+            var partialImportContainer = root.Q<VisualElement>("partial-import-container");
             _weightModeContainer = root.Q<VisualElement>("weight-mode-container");
             _listContainer = root.Q<VisualElement>("blendshape-list-container");
             _emptyLabel = root.Q<Label>("empty-label");
@@ -255,9 +270,39 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _thumbnailCaptureView.CaptureRequested += CaptureThumbnail;
             _thumbnailCaptureView.MessageRequested += ShowMessage;
 
+            _partialImportView = new PartialImportView(partialImportContainer);
+            _partialImportView.ApplyRequested += ApplyPartialImportValues;
+            _partialImportView.PreviewRequested += RequestPartialImportPreview;
+
             UpdateButtonStates();
             UpdateFrameModeControls();
             ShowMessage("アバターを指定してください。", HelpBoxMessageType.Info);
+            return true;
+        }
+
+        private void ScheduleBuildGuiRetry()
+        {
+            if (_guiBuildRetryScheduled)
+            {
+                return;
+            }
+
+            _guiBuildRetryScheduled = true;
+            EditorApplication.delayCall += RetryBuildGui;
+        }
+
+        private void RetryBuildGui()
+        {
+            _guiBuildRetryScheduled = false;
+            if (this == null)
+            {
+                return;
+            }
+
+            if (BuildGui())
+            {
+                TryInitializeFromSelection();
+            }
         }
 
         private static void ConfigureTargetField(ObjectField field)
@@ -447,6 +492,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             RebuildBlendShapeList();
             _thumbnailCaptureView?.SetModel(_model);
+            _partialImportView?.SetModel(_model);
             UpdateFrameModeControls();
             if (markDirty)
             {
@@ -475,7 +521,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _blendShapeListView = new BlendShapeListView(_model, _listContainer, _emptyLabel);
             _blendShapeListView.Changed += OnModelChanged;
             _blendShapeListView.PreviewValueChanged += OnBlendShapePreviewValueChanged;
-            _blendShapeListView.PreviewResetRequested += StopPreview;
+            _blendShapeListView.PreviewResetRequested += OnBlendShapePreviewResetRequested;
             _blendShapeListView.SetEditingFrame(_editingFrame);
             _blendShapeListView.SetSearchText(_searchField != null ? _searchField.value : "");
             _blendShapeListView.SetShowChangedOnly(_showChangedOnly);
@@ -484,6 +530,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void OnModelChanged()
         {
+            _partialImportView?.Refresh();
             MarkUnsaved();
             RequestPreview();
         }
@@ -491,6 +538,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private void OnBlendShapePreviewValueChanged(BlendShapeEntry entry)
         {
             _previewService?.SampleEntry(_model, entry, _previewWeight);
+        }
+
+        private void OnBlendShapePreviewResetRequested()
+        {
+            StopPreview();
+            _partialImportView?.Refresh();
         }
 
         private void ResetValues()
@@ -538,6 +591,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             Undo.CollapseUndoOperations(group);
 
             _blendShapeListView?.SetEditingFrame(_editingFrame);
+            _partialImportView?.SetEditingFrame(_editingFrame);
             MarkUnsaved();
             UpdateFrameModeControls();
             RequestPreview();
@@ -547,6 +601,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             _editingFrame = editingFrame;
             _blendShapeListView?.SetEditingFrame(_editingFrame);
+            _partialImportView?.SetEditingFrame(_editingFrame);
 
             if (syncPreviewWeight && _model != null && _model.frameMode == ExpressionFrameMode.WeightBlend)
             {
@@ -590,6 +645,478 @@ namespace MitarashiDango.FacialExpressionController.Editor
             MarkUnsaved();
             RequestPreview();
             ShowMessage("始点へ現在の Skinned Mesh Renderer 値を読み込みました。", HelpBoxMessageType.Info);
+        }
+
+        private void ApplyPartialImportValues(IReadOnlyList<PartialImportValue> values)
+        {
+            if (_model == null)
+            {
+                ShowMessage("取り込み先の表情がありません。", HelpBoxMessageType.Warning);
+                return;
+            }
+
+            if (values == null || values.Count == 0)
+            {
+                ShowMessage("取り込むブレンドシェイプを選択してください。", HelpBoxMessageType.Warning);
+                return;
+            }
+
+            var applicableCount = CountApplicablePartialImportValues(_model, values);
+            if (applicableCount == 0)
+            {
+                ShowMessage("取り込み可能なブレンドシェイプがありません。", HelpBoxMessageType.Warning);
+                return;
+            }
+
+            Undo.IncrementCurrentGroup();
+            var group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("表情ブレンドシェイプを部分取り込み");
+            Undo.RecordObject(_model, "表情ブレンドシェイプを部分取り込み");
+
+            var appliedCount = ApplyPartialImportValuesToModel(_model, values);
+
+            EditorUtility.SetDirty(_model);
+            Undo.CollapseUndoOperations(group);
+            _blendShapeListView?.Refresh();
+            _partialImportView?.Refresh();
+            MarkUnsaved();
+            RequestPreview();
+            ShowMessage($"{appliedCount} 件のブレンドシェイプを取り込みました。", HelpBoxMessageType.Info);
+        }
+
+        private int ApplyPartialImportValuesToModel(ExpressionEditModel targetModel, IReadOnlyList<PartialImportValue> values)
+        {
+            if (targetModel == null || values == null)
+            {
+                return 0;
+            }
+
+            var appliedCount = 0;
+            foreach (var importValue in values)
+            {
+                if (!TryGetPartialImportTargetEntry(targetModel, importValue, out var entry)
+                    || !CanEditEntryValue(entry))
+                {
+                    continue;
+                }
+
+                var clampedValue = Mathf.Clamp(importValue.Value, 0f, 100f);
+                if (targetModel.frameMode == ExpressionFrameMode.WeightBlend
+                    && _editingFrame == ExpressionEditFrame.End)
+                {
+                    entry.endValue = clampedValue;
+                }
+                else
+                {
+                    entry.value = clampedValue;
+                    if (targetModel.frameMode == ExpressionFrameMode.SingleFrame)
+                    {
+                        entry.endValue = clampedValue;
+                    }
+                }
+
+                appliedCount++;
+            }
+
+            return appliedCount;
+        }
+
+        private static int CountApplicablePartialImportValues(ExpressionEditModel targetModel, IReadOnlyList<PartialImportValue> values)
+        {
+            if (targetModel == null || values == null)
+            {
+                return 0;
+            }
+
+            return values.Count(importValue => TryGetPartialImportTargetEntry(targetModel, importValue, out var entry) && CanEditEntryValue(entry));
+        }
+
+        private static bool TryGetPartialImportTargetEntry(
+            ExpressionEditModel targetModel,
+            PartialImportValue importValue,
+            out BlendShapeEntry entry)
+        {
+            entry = null;
+            if (targetModel == null || importValue == null || targetModel.entries == null)
+            {
+                return false;
+            }
+
+            if (importValue.BlendShapeIndex >= 0)
+            {
+                entry = targetModel.entries.FirstOrDefault(candidate => candidate != null && candidate.index == importValue.BlendShapeIndex);
+                if (entry != null)
+                {
+                    return true;
+                }
+            }
+
+            entry = targetModel.entries.FirstOrDefault(candidate => candidate != null && candidate.name == importValue.Name);
+            return entry != null;
+        }
+
+        private void RequestPartialImportPreview(IReadOnlyList<PartialImportValue> values)
+        {
+            _partialImportPreviewRequestVersion++;
+            var previewValues = values != null
+                ? values.ToList()
+                : new List<PartialImportValue>();
+            if (previewValues.Count == 0)
+            {
+                CancelPendingPartialImportPreviewCapture();
+                _partialImportView?.ClearPreviewTexture();
+                return;
+            }
+
+            UpdatePartialImportPreview(previewValues);
+        }
+
+        private void UpdatePartialImportPreview(IReadOnlyList<PartialImportValue> values)
+        {
+            if (_model == null || values == null || values.Count == 0)
+            {
+                _partialImportView?.ClearPreviewTexture();
+                return;
+            }
+
+            try
+            {
+                BeginPartialImportPreviewCapture(values, _partialImportPreviewRequestVersion);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[FacialExpressionController] Partial import preview failed: {ex}");
+                _partialImportView?.ClearPreviewTexture();
+                ShowMessage("部分取り込みプレビューに失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+            }
+        }
+
+        private void BeginPartialImportPreviewCapture(IReadOnlyList<PartialImportValue> values, int requestVersion)
+        {
+            if (_model == null
+                || values == null
+                || values.Count == 0
+                || _thumbnailCaptureView == null
+                || _model.targetRenderer == null
+                || _model.targetRenderer.sharedMesh == null)
+            {
+                _partialImportView?.ClearPreviewTexture();
+                return;
+            }
+
+            CancelPendingPartialImportPreviewCapture();
+
+            ExpressionEditModel previewModel = null;
+            GameObject previewAvatarRootObject = null;
+            try
+            {
+                previewModel = CreatePartialImportPreviewModel(values, out previewAvatarRootObject, out var appliedCount);
+                if (previewModel == null
+                    || previewAvatarRootObject == null
+                    || previewModel.targetRenderer == null
+                    || appliedCount == 0)
+                {
+                    _partialImportView?.ClearPreviewTexture();
+                    return;
+                }
+
+                ApplyPartialImportPreviewModelWeights(
+                    previewModel.targetRenderer,
+                    previewModel,
+                    GetPartialImportPreviewWeight(previewModel),
+                    values);
+
+                _pendingPartialImportPreviewCapture = new PartialImportPreviewCapture(
+                    requestVersion,
+                    previewModel,
+                    previewAvatarRootObject);
+                previewModel = null;
+                previewAvatarRootObject = null;
+                _partialImportPreviewCaptureReadyTime = EditorApplication.timeSinceStartup + PreviewDebounceSeconds;
+                EditorApplication.QueuePlayerLoopUpdate();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[FacialExpressionController] Partial import preview capture failed: {ex}");
+                _partialImportView?.ClearPreviewTexture();
+                ShowMessage("部分取り込みプレビューに失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+            }
+            finally
+            {
+                if (previewModel != null)
+                {
+                    DestroyImmediate(previewModel);
+                }
+
+                if (previewAvatarRootObject != null)
+                {
+                    DestroyImmediate(previewAvatarRootObject);
+                }
+            }
+        }
+
+        private void CompletePendingPartialImportPreviewCapture()
+        {
+            var capture = _pendingPartialImportPreviewCapture;
+            if (capture == null)
+            {
+                return;
+            }
+
+            _pendingPartialImportPreviewCapture = null;
+
+            Texture2D previewTexture = null;
+            try
+            {
+                if (capture.RequestVersion == _partialImportPreviewRequestVersion
+                    && capture.PreviewModel != null
+                    && capture.PreviewModel.targetRenderer != null
+                    && _thumbnailCaptureView != null)
+                {
+                    previewTexture = ThumbnailCaptureService.Capture(capture.PreviewModel, _thumbnailCaptureView.Settings);
+                    _partialImportView?.SetPreviewTexture(previewTexture);
+                    previewTexture = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[FacialExpressionController] Partial import preview capture failed: {ex}");
+                _partialImportView?.ClearPreviewTexture();
+                ShowMessage("部分取り込みプレビューに失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+            }
+            finally
+            {
+                if (previewTexture != null)
+                {
+                    DestroyImmediate(previewTexture);
+                }
+
+                if (capture.PreviewModel != null)
+                {
+                    DestroyImmediate(capture.PreviewModel);
+                }
+
+                if (capture.PreviewAvatarRootObject != null)
+                {
+                    DestroyImmediate(capture.PreviewAvatarRootObject);
+                }
+            }
+        }
+
+        private void CancelPendingPartialImportPreviewCapture()
+        {
+            var capture = _pendingPartialImportPreviewCapture;
+            if (capture == null)
+            {
+                return;
+            }
+
+            _pendingPartialImportPreviewCapture = null;
+            if (capture.PreviewModel != null)
+            {
+                DestroyImmediate(capture.PreviewModel);
+            }
+
+            if (capture.PreviewAvatarRootObject != null)
+            {
+                DestroyImmediate(capture.PreviewAvatarRootObject);
+            }
+        }
+
+        private ExpressionEditModel CreatePartialImportPreviewModel(
+            IReadOnlyList<PartialImportValue> values,
+            out GameObject previewAvatarRootObject,
+            out int appliedCount)
+        {
+            previewAvatarRootObject = null;
+            appliedCount = 0;
+            if (_model == null || values == null)
+            {
+                return null;
+            }
+
+            var previewModel = CloneModelForPartialImportPreview(_model);
+            if (!TryCreateOffscreenPreviewAvatar(previewModel, out previewAvatarRootObject))
+            {
+                DestroyImmediate(previewModel);
+                return null;
+            }
+
+            appliedCount = ApplyPartialImportValuesToModel(previewModel, values);
+            return previewModel;
+        }
+
+        private bool TryCreateOffscreenPreviewAvatar(ExpressionEditModel previewModel, out GameObject previewAvatarRootObject)
+        {
+            previewAvatarRootObject = null;
+            if (_model == null
+                || _model.avatarRootObject == null
+                || _model.targetRenderer == null
+                || previewModel == null)
+            {
+                return false;
+            }
+
+            var rendererPath = MiscUtil.GetPathInHierarchy(_model.targetRenderer.gameObject, _model.avatarRootObject);
+            previewAvatarRootObject = Instantiate(_model.avatarRootObject);
+            previewAvatarRootObject.name = $"{_model.avatarRootObject.name} Partial Import Preview";
+            previewAvatarRootObject.hideFlags = HideFlags.HideAndDontSave;
+            foreach (var transform in previewAvatarRootObject.GetComponentsInChildren<Transform>(true))
+            {
+                transform.gameObject.hideFlags = HideFlags.HideAndDontSave;
+            }
+
+            previewAvatarRootObject.transform.position += Vector3.one * PartialImportPreviewOffscreenOffset;
+
+            var targetTransform = string.IsNullOrEmpty(rendererPath)
+                ? previewAvatarRootObject.transform
+                : previewAvatarRootObject.transform.Find(rendererPath);
+            var previewRenderer = targetTransform != null
+                ? targetTransform.GetComponent<SkinnedMeshRenderer>()
+                : null;
+            if (previewRenderer == null || previewRenderer.sharedMesh == null)
+            {
+                DestroyImmediate(previewAvatarRootObject);
+                previewAvatarRootObject = null;
+                return false;
+            }
+
+            previewModel.avatarRootObject = previewAvatarRootObject;
+            previewModel.targetRenderer = previewRenderer;
+            return true;
+        }
+
+        private void ApplyPartialImportPreviewModelWeights(
+            SkinnedMeshRenderer renderer,
+            ExpressionEditModel previewModel,
+            float previewWeight,
+            IReadOnlyList<PartialImportValue> importValues)
+        {
+            if (renderer == null || renderer.sharedMesh == null || previewModel == null)
+            {
+                return;
+            }
+
+            foreach (var entry in previewModel.entries)
+            {
+                if (!entry.ShouldOutput || !IsValidBlendShapeIndex(entry, renderer))
+                {
+                    continue;
+                }
+
+                renderer.SetBlendShapeWeight(entry.index, GetPreviewModelBlendShapeValue(previewModel, entry, previewWeight));
+            }
+
+            ApplyPartialImportValuesDirectlyToRenderer(renderer, previewModel, importValues);
+        }
+
+        private void ApplyPartialImportValuesDirectlyToRenderer(
+            SkinnedMeshRenderer renderer,
+            ExpressionEditModel previewModel,
+            IReadOnlyList<PartialImportValue> importValues)
+        {
+            if (renderer == null || renderer.sharedMesh == null || previewModel == null || importValues == null)
+            {
+                return;
+            }
+
+            foreach (var importValue in importValues)
+            {
+                if (!TryGetPartialImportTargetEntry(previewModel, importValue, out var entry)
+                    || !CanEditEntryValue(entry)
+                    || !IsValidBlendShapeIndex(entry, renderer))
+                {
+                    continue;
+                }
+
+                renderer.SetBlendShapeWeight(entry.index, Mathf.Clamp(importValue.Value, 0f, 100f));
+            }
+        }
+
+        private static float GetPreviewModelBlendShapeValue(
+            ExpressionEditModel previewModel,
+            BlendShapeEntry entry,
+            float previewWeight)
+        {
+            if (previewModel != null && previewModel.frameMode == ExpressionFrameMode.WeightBlend)
+            {
+                return Mathf.Lerp(entry.value, entry.endValue, Mathf.Clamp01(previewWeight));
+            }
+
+            return entry.value;
+        }
+
+        private static ExpressionEditModel CloneModelForPartialImportPreview(ExpressionEditModel source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            var previewModel = ExpressionEditModel.Create();
+            previewModel.avatarRootObject = source.avatarRootObject;
+            previewModel.targetRenderer = source.targetRenderer;
+            previewModel.frameMode = source.frameMode;
+            previewModel.hasSourceClip = source.hasSourceClip;
+            previewModel.sourceClipName = source.sourceClipName;
+            previewModel.sourceFrameRate = source.sourceFrameRate;
+            previewModel.hasIntermediateKeys = source.hasIntermediateKeys;
+            previewModel.entries = source.entries
+                .Select(CloneEntryForPartialImportPreview)
+                .ToList();
+            return previewModel;
+        }
+
+        private static BlendShapeEntry CloneEntryForPartialImportPreview(BlendShapeEntry source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            return new BlendShapeEntry
+            {
+                index = source.index,
+                name = source.name,
+                value = source.value,
+                endValue = source.endValue,
+                initialValue = source.initialValue,
+                hasSourceCurve = source.hasSourceCurve,
+                sourceFrameMode = source.sourceFrameMode,
+                sourceValue = source.sourceValue,
+                sourceEndValue = source.sourceEndValue,
+                sourceCurve = ExpressionClipIO.CopyCurve(source.sourceCurve),
+                systemExclusion = source.systemExclusion,
+                systemExclusionUnlocked = source.systemExclusionUnlocked,
+                userExcluded = source.userExcluded,
+            };
+        }
+
+        private float GetPartialImportPreviewWeight(ExpressionEditModel previewModel)
+        {
+            if (previewModel != null && previewModel.frameMode == ExpressionFrameMode.WeightBlend)
+            {
+                return _editingFrame == ExpressionEditFrame.End ? 1f : 0f;
+            }
+
+            return 1f;
+        }
+
+        private sealed class PartialImportPreviewCapture
+        {
+            public PartialImportPreviewCapture(
+                int requestVersion,
+                ExpressionEditModel previewModel,
+                GameObject previewAvatarRootObject)
+            {
+                RequestVersion = requestVersion;
+                PreviewModel = previewModel;
+                PreviewAvatarRootObject = previewAvatarRootObject;
+            }
+
+            public int RequestVersion { get; }
+            public ExpressionEditModel PreviewModel { get; }
+            public GameObject PreviewAvatarRootObject { get; }
         }
 
         private void ToggleChangedOnlyFilter()
@@ -774,6 +1301,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _editingFrame = ExpressionEditFrame.Start;
                 SetPreviewWeightWithoutNotify(0f);
                 _blendShapeListView?.SetEditingFrame(_editingFrame);
+                _partialImportView?.SetEditingFrame(_editingFrame);
             }
 
             _startFrameButton?.SetEnabled(isWeightBlend);
@@ -783,6 +1311,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _startFrameButton?.EnableInClassList("selected", _editingFrame == ExpressionEditFrame.Start);
             _endFrameButton?.EnableInClassList("selected", _editingFrame == ExpressionEditFrame.End);
             _previewWeightSlider?.SetValueWithoutNotify(_previewWeight);
+            _partialImportView?.SetEditingFrame(_editingFrame);
         }
 
         private void UpdateButtonStates()
@@ -822,18 +1351,19 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             UpdateButtonStates();
 
-            if (!_previewDirty)
+            if (_pendingPartialImportPreviewCapture != null
+                && EditorApplication.timeSinceStartup >= _partialImportPreviewCaptureReadyTime)
             {
-                return;
+                CompletePendingPartialImportPreviewCapture();
             }
 
-            if (EditorApplication.timeSinceStartup - _lastPreviewRequestTime < PreviewDebounceSeconds)
+            if (_previewDirty
+                && EditorApplication.timeSinceStartup - _lastPreviewRequestTime >= PreviewDebounceSeconds)
             {
-                return;
+                _previewDirty = false;
+                _previewService?.Sample(_model, _previewWeight);
             }
 
-            _previewDirty = false;
-            _previewService?.Sample(_model, _previewWeight);
         }
 
         private void StopPreview()
@@ -1039,6 +1569,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private void OnUndoRedoPerformed()
         {
             _blendShapeListView?.Refresh();
+            _partialImportView?.Refresh();
             UpdateFrameModeControls();
             MarkUnsaved();
             RequestPreview();
