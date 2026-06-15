@@ -293,6 +293,11 @@
     background-color: rgba(64, 64, 64, 0.25);
 }
 
+.thumbnail-busy {
+    width: 132px;
+    margin-top: 4px;
+}
+
 .thumbnail-preview-button {
     width: 132px;
     min-width: 132px;

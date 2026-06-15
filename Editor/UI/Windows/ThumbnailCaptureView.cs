@@ -26,6 +26,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private readonly Button _autoFrameButton;
         private readonly Button _previewButton;
         private readonly Image _previewImage;
+        private readonly HelpBox _busyBox;
         private readonly Button _captureButton;
         private readonly ObjectField _capturedIconField;
         private readonly Label _capturedPathLabel;
@@ -41,6 +42,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private string _capturedAssetPath = "";
         private int _selectedExpressionIndex = -1;
         private bool _hasModel;
+        private bool _isBusy;
         private bool _ignoreChange;
 
         public ThumbnailCaptureView(VisualElement container)
@@ -128,6 +130,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _previewImage.AddToClassList("thumbnail-preview-image");
             _previewContainer.Add(_previewImage);
 
+            _busyBox = new HelpBox("", HelpBoxMessageType.Info);
+            _busyBox.AddToClassList("thumbnail-busy");
+            _previewContainer.Add(_busyBox);
+
             _previewButton = new Button(() => PreviewRequested?.Invoke())
             {
                 text = "プレビューを更新",
@@ -212,6 +218,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             RefreshExpressionChoices();
             UpdateCapturedPathLabel();
             UpdateBackgroundColorVisibility();
+            SetBusy(false, "");
         }
 
         public event Action AutoFrameRequested;
@@ -270,6 +277,19 @@ namespace MitarashiDango.FacialExpressionController.Editor
             ClearPreviewTexture();
             _previewTexture = texture;
             _previewImage.image = _previewTexture;
+            UpdatePreviewVisibility();
+        }
+
+        public void SetBusy(bool busy, string message)
+        {
+            _isBusy = busy;
+            if (_busyBox != null)
+            {
+                _busyBox.text = message ?? "";
+                _busyBox.EnableInClassList("hidden", !busy || string.IsNullOrEmpty(message));
+            }
+
+            UpdateButtonStates();
             UpdatePreviewVisibility();
         }
 
@@ -442,10 +462,18 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var canAssign = _capturedTexture != null
                 && _targetGroupField.value is FacialExpressionGroup
                 && _selectedExpressionIndex >= 0;
-            _autoFrameButton.SetEnabled(_hasModel);
-            _previewButton.SetEnabled(_hasModel);
-            _captureButton.SetEnabled(_hasModel);
-            _assignButton.SetEnabled(canAssign);
+            _autoFrameButton.SetEnabled(_hasModel && !_isBusy);
+            _previewButton.SetEnabled(_hasModel && !_isBusy);
+            _captureButton.SetEnabled(_hasModel && !_isBusy);
+            _assignButton.SetEnabled(canAssign && !_isBusy);
+            _distanceField.SetEnabled(!_isBusy);
+            _angleField.SetEnabled(!_isBusy);
+            _offsetField.SetEnabled(!_isBusy);
+            _backgroundModeField.SetEnabled(!_isBusy);
+            _backgroundColorField.SetEnabled(!_isBusy);
+            _capturedIconField.SetEnabled(!_isBusy);
+            _targetGroupField.SetEnabled(!_isBusy);
+            _targetExpressionField.SetEnabled(!_isBusy && _expressionChoices.Count > 0 && _expressionChoices[0] != NoExpressionLabel);
             UpdateReloadButtonVisibility();
         }
 
@@ -467,12 +495,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void UpdatePreviewVisibility()
         {
-            _previewContainer.EnableInClassList("hidden", !_hasModel || _previewTexture == null);
+            _previewContainer.EnableInClassList("hidden", !_hasModel || (_previewTexture == null && !_isBusy));
         }
 
         private void UpdateReloadButtonVisibility()
         {
             _reloadExpressionsButton.EnableInClassList("hidden", _targetGroupField.value == null);
+            _reloadExpressionsButton.SetEnabled(!_isBusy);
         }
     }
 }
