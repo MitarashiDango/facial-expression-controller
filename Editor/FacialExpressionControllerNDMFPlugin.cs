@@ -52,6 +52,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
+            WarnInvalidDefaultGesturePresetNumbers(fec);
+
             CreateMAParameters(fec);
             CreateAnimatorControllerProcess(ctx, fec);
             SetupContactReceiver(fec);
@@ -188,9 +190,33 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void CreateMAParameters(FacialExpressionController fec)
         {
-            var parameters = new Parameters();
+            var parameters = new Parameters(fec);
             var modularAvatarParameters = fec.gameObject.AddComponent<ModularAvatarParameters>();
             modularAvatarParameters.parameters = parameters.CreateNDMFParameterConfigs();
+        }
+
+        private void WarnInvalidDefaultGesturePresetNumbers(FacialExpressionController fec)
+        {
+            if (!GesturePresetDefaultValueResolver.HasValidPreset(fec))
+            {
+                Debug.LogWarning("[FacialExpressionController] No valid facial expression gesture presets were found. The default left and right gesture preset numbers will use internal value 0.");
+                return;
+            }
+
+            WarnInvalidDefaultGesturePresetNumber(fec, fec.defaultLeftGesturePresetNumber, "left hand");
+            WarnInvalidDefaultGesturePresetNumber(fec, fec.defaultRightGesturePresetNumber, "right hand");
+        }
+
+        private void WarnInvalidDefaultGesturePresetNumber(FacialExpressionController fec, int presetNumber, string handLabel)
+        {
+            if (GesturePresetDefaultValueResolver.IsValidPresetNumber(fec, presetNumber))
+            {
+                return;
+            }
+
+            var resolvedPresetNumber = GesturePresetDefaultValueResolver.ResolveIndex(fec, presetNumber)
+                + GesturePresetDefaultValueResolver.FirstPresetNumber;
+            Debug.LogWarning($"[FacialExpressionController] The default {handLabel} gesture preset number is invalid. Value: {presetNumber}, Resolved: {resolvedPresetNumber}.");
         }
 
         private void CreateAnimatorControllerProcess(BuildContext ctx, FacialExpressionController fec)

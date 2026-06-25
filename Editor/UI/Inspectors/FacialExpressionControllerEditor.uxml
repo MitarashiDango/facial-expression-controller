@@ -11,6 +11,9 @@
     <ui:Foldout text="表情設定" value="true">
         <ui:VisualElement>
             <ui:ListView show-border="true" virtualization-method="DynamicHeight" show-foldout-header="true" show-add-remove-footer="true" reorder-mode="Animated" header-title="表情ジェスチャープリセット" binding-path="facialExpressionGesturePresets" />
+            <uie:PropertyField label="左手の初期プリセット番号" tooltip="表情ジェスチャープリセット一覧の先頭を1として指定します。" binding-path="defaultLeftGesturePresetNumber" name="default-left-gesture-preset-number" />
+            <uie:PropertyField label="右手の初期プリセット番号" tooltip="表情ジェスチャープリセット一覧の先頭を1として指定します。" binding-path="defaultRightGesturePresetNumber" name="default-right-gesture-preset-number" />
+            <ui:HelpBox name="default-gesture-preset-warning" text="" message-type="Warning" class="hidden" />
             <ui:ListView virtualization-method="DynamicHeight" show-border="true" show-foldout-header="true" show-add-remove-footer="true" reorder-mode="Animated" header-title="表情グループ" binding-path="facialExpressionGroups" />
         </ui:VisualElement>
     </ui:Foldout>
