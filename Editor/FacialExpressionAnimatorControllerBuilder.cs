@@ -35,7 +35,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             };
             var waitClipTargetPath = EnsureWaitClipTargetPath(avatarRootObject);
 
-            var parameters = new Parameters();
+            var parameters = new Parameters(fec);
 
             var ac = new AnimatorController
             {
@@ -98,7 +98,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 name = "blank"
             };
 
-            var parameters = new Parameters();
+            var parameters = new Parameters(fec);
 
             var ac = new AnimatorController
             {

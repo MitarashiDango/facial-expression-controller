@@ -27,6 +27,18 @@ namespace MitarashiDango.FacialExpressionController
 
         public List<FacialExpressionGesturePreset> facialExpressionGesturePresets = new List<FacialExpressionGesturePreset>();
 
+        /// <summary>
+        /// 左手に割り当てる初期ジェスチャープリセット番号 (1 = 先頭のプリセット)
+        /// </summary>
+        [Min(1)]
+        public int defaultLeftGesturePresetNumber = 1;
+
+        /// <summary>
+        /// 右手に割り当てる初期ジェスチャープリセット番号 (1 = 先頭のプリセット)
+        /// </summary>
+        [Min(1)]
+        public int defaultRightGesturePresetNumber = 1;
+
         public List<FacialExpressionGroup> facialExpressionGroups = new List<FacialExpressionGroup>();
 
         /// <summary>
