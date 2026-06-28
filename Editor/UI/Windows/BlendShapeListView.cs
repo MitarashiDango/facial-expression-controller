@@ -20,6 +20,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private bool _showOutputOnly;
         private ExpressionEditFrame _editingFrame = ExpressionEditFrame.Start;
         private BlendShapeOutputMode _outputMode = BlendShapeOutputMode.AllTargets;
+        private IReadOnlyDictionary<int, BlendShapeInfluenceResult> _spatialInfluenceResults;
         private IReadOnlyDictionary<BlendShapeEntry, BlendShapeOutputDecision> _outputDecisions =
             new Dictionary<BlendShapeEntry, BlendShapeOutputDecision>();
         private int _activeUndoGroup = -1;
@@ -72,6 +73,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
             Refresh();
         }
 
+        public void SetSpatialInfluenceFilter(IReadOnlyDictionary<int, BlendShapeInfluenceResult> results)
+        {
+            _spatialInfluenceResults = results ?? new Dictionary<int, BlendShapeInfluenceResult>();
+            Refresh();
+        }
+
+        public void ClearSpatialInfluenceFilter()
+        {
+            if (_spatialInfluenceResults == null)
+            {
+                return;
+            }
+
+            _spatialInfluenceResults = null;
+            Refresh();
+        }
+
         public void SetEditingFrame(ExpressionEditFrame editingFrame)
         {
             if (_editingFrame == editingFrame)
@@ -89,7 +107,15 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             if (_model != null)
             {
-                foreach (var entry in _model.entries.Where(MatchesFilter))
+                var entries = _model.entries.Where(MatchesFilter);
+                if (_spatialInfluenceResults != null)
+                {
+                    entries = entries
+                        .OrderByDescending(entry => _spatialInfluenceResults[entry.index].Score)
+                        .ThenBy(entry => entry.name, StringComparer.Ordinal);
+                }
+
+                foreach (var entry in entries)
                 {
                     _items.Add(entry);
                 }
@@ -173,6 +199,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             if (_showOutputOnly && !IsOutputScheduled(entry))
+            {
+                return false;
+            }
+
+            if (_spatialInfluenceResults != null && !_spatialInfluenceResults.ContainsKey(entry.index))
             {
                 return false;
             }

@@ -17,6 +17,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private const string MainUssPath = "Packages/com.matcha-soft.facial-expression-controller/Editor/UI/Windows/FacialExpressionEditorWindow.uss";
         private const double PreviewDebounceSeconds = 0.016d;
         private const float PartialImportPreviewOffscreenOffset = 10000f;
+        private const float SceneInfluenceFilterRadiusMeters = BlendShapeInfluenceProbeOptions.DefaultWorldRadius;
+        private const float SceneInfluenceFilterMinimumDeltaMeters = BlendShapeInfluenceProbeOptions.DefaultMinimumDelta;
+        private const int SceneInfluenceFilterMaxResults = BlendShapeInfluenceProbeOptions.DefaultMaxResults;
         private const string SingleFrameModeLabel = "1 フレーム";
         private const string WeightBlendModeLabel = "ウェイト連動（2 フレーム）";
         private const string OutputModeAllTargetsLabel = "全ての編集・出力対象";
@@ -38,6 +41,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private ObjectField _referenceClipField;
         private ToolbarSearchField _searchField;
         private ToolbarMenu _filterMenu;
+        private ToolbarToggle _sceneInfluenceFilterToggle;
+        private Button _clearSceneInfluenceFilterButton;
+        private Label _sceneInfluenceFilterStatusLabel;
         private Toggle _previewToggle;
         private Button _newButton;
         private Button _loadButton;
@@ -61,6 +67,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private ThumbnailCaptureView _thumbnailCaptureView;
         private PartialImportView _partialImportView;
         private ExpressionPreviewService _previewService;
+        private BlendShapeInfluenceProbeContext _sceneInfluenceProbeContext;
         private AnimationClip _currentClip;
         private AnimationClip _referenceClip;
         private string _currentAssetPath;
@@ -72,6 +79,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private bool _showChangedOnly;
         private bool _showEditableOnly;
         private bool _showOutputOnly;
+        private bool _sceneInfluenceFilterEnabled;
+        private bool _sceneInfluenceMouseDownConsumed;
+        private IReadOnlyDictionary<int, BlendShapeInfluenceResult> _sceneInfluenceResults;
+        private BlendShapeInfluenceHit _sceneInfluenceHit;
         private bool _guiBuildRetryScheduled;
         private double _lastPreviewRequestTime;
         private int _partialImportPreviewRequestVersion;
@@ -124,6 +135,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _previewService = new ExpressionPreviewService();
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
             EditorApplication.update += OnEditorUpdate;
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
             if (BuildGui())
             {
                 TryInitializeFromSelection();
@@ -134,8 +147,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             EditorApplication.update -= OnEditorUpdate;
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
             EditorApplication.delayCall -= RetryBuildGui;
             _guiBuildRetryScheduled = false;
+            SetSceneInfluenceFilterEnabled(false);
+            ClearSceneInfluenceFilter(false);
+            DisposeSceneInfluenceProbeContext();
             CancelPendingPartialImportPreviewCapture();
             CancelPendingThumbnailCapture();
             StopPreview();
@@ -287,6 +305,28 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _filterMenu.menu.AppendAction("出力予定のみ表示", _ => ToggleOutputOnlyFilter(), GetOutputOnlyFilterStatus);
             UpdateFilterMenuText();
             filterContainer.Add(_filterMenu);
+
+            _sceneInfluenceFilterToggle = new ToolbarToggle
+            {
+                text = "シーンから絞り込み",
+                tooltip = "Scene View でクリックした位置に影響するブレンドシェイプだけを表示します。",
+            };
+            _sceneInfluenceFilterToggle.AddToClassList("scene-influence-toggle");
+            _sceneInfluenceFilterToggle.RegisterValueChangedCallback(evt => SetSceneInfluenceFilterEnabled(evt.newValue));
+            filterContainer.Add(_sceneInfluenceFilterToggle);
+
+            _clearSceneInfluenceFilterButton = new Button(() => ClearSceneInfluenceFilter(true))
+            {
+                text = "位置フィルタ解除",
+                tooltip = "クリック位置による絞り込みを解除します。",
+            };
+            _clearSceneInfluenceFilterButton.AddToClassList("scene-influence-clear-button");
+            filterContainer.Add(_clearSceneInfluenceFilterButton);
+
+            _sceneInfluenceFilterStatusLabel = new Label();
+            _sceneInfluenceFilterStatusLabel.AddToClassList("scene-influence-status");
+            filterContainer.Add(_sceneInfluenceFilterStatusLabel);
+            UpdateSceneInfluenceFilterStatus();
 
             _thumbnailCaptureView = new ThumbnailCaptureView(thumbnailContainer);
             _thumbnailCaptureView.AutoFrameRequested += AutoFrameThumbnail;
@@ -543,6 +583,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             CancelPendingThumbnailCapture();
             StopPreview();
+            SetSceneInfluenceFilterEnabled(false);
+            ClearSceneInfluenceFilter(false);
+            DisposeSceneInfluenceProbeContext();
 
             if (_model != null)
             {
@@ -611,6 +654,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _blendShapeListView.SetShowChangedOnly(_showChangedOnly);
             _blendShapeListView.SetShowEditableOnly(_showEditableOnly);
             _blendShapeListView.SetShowOutputOnly(_showOutputOnly);
+            if (_sceneInfluenceResults != null)
+            {
+                _blendShapeListView.SetSpatialInfluenceFilter(_sceneInfluenceResults);
+            }
+
             RefreshOutputDecisionUi();
         }
 
@@ -1255,6 +1303,107 @@ namespace MitarashiDango.FacialExpressionController.Editor
             UpdateFilterMenuText();
         }
 
+        private void SetSceneInfluenceFilterEnabled(bool enabled)
+        {
+            var canEnable = enabled && CanUseSceneInfluenceFilter();
+            if (_sceneInfluenceFilterEnabled == canEnable)
+            {
+                _sceneInfluenceFilterToggle?.SetValueWithoutNotify(canEnable);
+                return;
+            }
+
+            _sceneInfluenceFilterEnabled = canEnable;
+            if (!_sceneInfluenceFilterEnabled)
+            {
+                _sceneInfluenceMouseDownConsumed = false;
+            }
+
+            _sceneInfluenceFilterToggle?.SetValueWithoutNotify(_sceneInfluenceFilterEnabled);
+            if (_sceneInfluenceFilterEnabled)
+            {
+                SceneView.duringSceneGui -= OnSceneViewDuringSceneGui;
+                SceneView.duringSceneGui += OnSceneViewDuringSceneGui;
+            }
+            else
+            {
+                SceneView.duringSceneGui -= OnSceneViewDuringSceneGui;
+            }
+
+            if (enabled && !canEnable)
+            {
+                ShowMessage("アバターと対象 Skinned Mesh Renderer を指定してください。", HelpBoxMessageType.Warning);
+            }
+
+            UpdateButtonStates();
+            SceneView.RepaintAll();
+        }
+
+        private bool CanUseSceneInfluenceFilter()
+        {
+            return _model != null
+                && _model.targetRenderer != null
+                && _model.targetRenderer.sharedMesh != null
+                && _model.targetRenderer.sharedMesh.blendShapeCount > 0;
+        }
+
+        private void ClearSceneInfluenceFilter(bool showMessage)
+        {
+            var hadFilter = _sceneInfluenceResults != null;
+            _sceneInfluenceResults = null;
+            _sceneInfluenceHit = null;
+            _blendShapeListView?.ClearSpatialInfluenceFilter();
+            UpdateSceneInfluenceFilterStatus();
+            UpdateFilterMenuText();
+            SceneView.RepaintAll();
+
+            if (showMessage && hadFilter)
+            {
+                ShowMessage("位置フィルタを解除しました。", HelpBoxMessageType.Info);
+            }
+        }
+
+        private void ApplySceneInfluenceFilter(
+            BlendShapeInfluenceHit hit,
+            IReadOnlyList<BlendShapeInfluenceResult> results)
+        {
+            _sceneInfluenceHit = hit;
+            _sceneInfluenceResults = results != null
+                ? results.ToDictionary(result => result.BlendShapeIndex)
+                : new Dictionary<int, BlendShapeInfluenceResult>();
+            _blendShapeListView?.SetSpatialInfluenceFilter(_sceneInfluenceResults);
+            UpdateSceneInfluenceFilterStatus();
+            UpdateFilterMenuText();
+            SceneView.RepaintAll();
+
+            var count = _sceneInfluenceResults.Count;
+            if (count == 0)
+            {
+                ShowMessage("クリック位置に影響するブレンドシェイプは見つかりませんでした。", HelpBoxMessageType.Warning);
+                return;
+            }
+
+            ShowMessage($"{count} 件のブレンドシェイプをクリック位置で絞り込みました。", HelpBoxMessageType.Info);
+        }
+
+        private void UpdateSceneInfluenceFilterStatus()
+        {
+            if (_sceneInfluenceFilterStatusLabel != null)
+            {
+                var hasFilter = _sceneInfluenceResults != null;
+                var count = hasFilter ? _sceneInfluenceResults.Count : 0;
+                _sceneInfluenceFilterStatusLabel.text = hasFilter ? $"位置フィルタ: {count} 件" : "";
+                _sceneInfluenceFilterStatusLabel.EnableInClassList("hidden", !hasFilter);
+            }
+
+            _clearSceneInfluenceFilterButton?.SetEnabled(_sceneInfluenceResults != null);
+        }
+
+        private void DisposeSceneInfluenceProbeContext()
+        {
+            _sceneInfluenceProbeContext?.Dispose();
+            _sceneInfluenceProbeContext = null;
+        }
+
         private DropdownMenuAction.Status GetChangedOnlyFilterStatus(DropdownMenuAction action)
         {
             return _showChangedOnly ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal;
@@ -1279,7 +1428,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             var activeFilterCount = (_showChangedOnly ? 1 : 0)
                 + (_showEditableOnly ? 1 : 0)
-                + (_showOutputOnly ? 1 : 0);
+                + (_showOutputOnly ? 1 : 0)
+                + (_sceneInfluenceResults != null ? 1 : 0);
             _filterMenu.text = activeFilterCount > 0 ? $"絞り込み ({activeFilterCount})" : "絞り込み";
         }
 
@@ -1722,6 +1872,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _frameModeField?.SetEnabled(hasModel);
             _outputModeField?.SetEnabled(hasModel);
             _referenceClipField?.SetEnabled(hasModel && _outputMode == BlendShapeOutputMode.ReferenceClipDiff);
+            _sceneInfluenceFilterToggle?.SetEnabled(CanUseSceneInfluenceFilter());
+            _clearSceneInfluenceFilterButton?.SetEnabled(_sceneInfluenceResults != null);
             _startFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
             _endFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
             _loadStartFromRendererButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
@@ -1769,6 +1921,119 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _previewService?.Sample(_model, _previewWeight);
             }
 
+        }
+
+        private void OnBeforeAssemblyReload()
+        {
+            SetSceneInfluenceFilterEnabled(false);
+        }
+
+        private void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            if (state == PlayModeStateChange.ExitingEditMode || state == PlayModeStateChange.EnteredPlayMode)
+            {
+                SetSceneInfluenceFilterEnabled(false);
+            }
+        }
+
+        private void OnSceneViewDuringSceneGui(SceneView sceneView)
+        {
+            if (!_sceneInfluenceFilterEnabled)
+            {
+                return;
+            }
+
+            var currentEvent = Event.current;
+            if (currentEvent == null)
+            {
+                return;
+            }
+
+            if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0)
+            {
+                _sceneInfluenceMouseDownConsumed = false;
+            }
+
+            if (currentEvent.type == EventType.MouseUp && currentEvent.button == 0 && _sceneInfluenceMouseDownConsumed)
+            {
+                _sceneInfluenceMouseDownConsumed = false;
+                currentEvent.Use();
+                return;
+            }
+
+            DrawSceneInfluenceFilterMarker(sceneView);
+
+            if (currentEvent.type != EventType.MouseDown
+                || currentEvent.button != 0
+                || currentEvent.alt)
+            {
+                return;
+            }
+
+            if (!CanUseSceneInfluenceFilter())
+            {
+                SetSceneInfluenceFilterEnabled(false);
+                return;
+            }
+
+            var ray = HandleUtility.GUIPointToWorldRay(currentEvent.mousePosition);
+            try
+            {
+                _sceneInfluenceProbeContext ??= new BlendShapeInfluenceProbeContext();
+                var options = new BlendShapeInfluenceProbeOptions
+                {
+                    worldRadius = SceneInfluenceFilterRadiusMeters,
+                    minimumDelta = SceneInfluenceFilterMinimumDeltaMeters,
+                    maxResults = SceneInfluenceFilterMaxResults,
+                };
+                if (!BlendShapeInfluenceProbe.TryProbe(
+                    _model.targetRenderer,
+                    ray,
+                    options,
+                    _sceneInfluenceProbeContext,
+                    out var hit,
+                    out var results))
+                {
+                    return;
+                }
+
+                ApplySceneInfluenceFilter(hit, results);
+                _sceneInfluenceMouseDownConsumed = true;
+                currentEvent.Use();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[FacialExpressionController] Blend shape influence filter failed: {ex}");
+                ShowMessage("位置フィルタの計算に失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+                currentEvent.Use();
+            }
+        }
+
+        private void DrawSceneInfluenceFilterMarker(SceneView sceneView)
+        {
+            Handles.BeginGUI();
+            EditorGUI.HelpBox(new Rect(8f, 8f, 180f, 22f), "顔メッシュをクリック", MessageType.Info);
+            Handles.EndGUI();
+
+            if (_sceneInfluenceHit == null)
+            {
+                return;
+            }
+
+            var normal = _sceneInfluenceHit.WorldNormal.sqrMagnitude > 0.000001f
+                ? _sceneInfluenceHit.WorldNormal.normalized
+                : Vector3.up;
+            if (sceneView != null && sceneView.camera != null && Vector3.Dot(normal, sceneView.camera.transform.forward) > 0f)
+            {
+                normal = -normal;
+            }
+
+            var markerSize = HandleUtility.GetHandleSize(_sceneInfluenceHit.WorldPosition) * 0.04f;
+            var previousColor = Handles.color;
+            Handles.color = new Color(0.25f, 0.75f, 1f, 0.9f);
+            Handles.SphereHandleCap(0, _sceneInfluenceHit.WorldPosition, Quaternion.identity, markerSize, EventType.Repaint);
+            Handles.DrawWireDisc(_sceneInfluenceHit.WorldPosition, normal, SceneInfluenceFilterRadiusMeters);
+            Handles.color = previousColor;
         }
 
         private void StopPreview()

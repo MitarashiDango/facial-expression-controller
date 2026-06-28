@@ -375,6 +375,23 @@
     flex-shrink: 0;
 }
 
+.scene-influence-toggle {
+    flex-shrink: 0;
+    margin-left: 4px;
+}
+
+.scene-influence-clear-button {
+    flex-shrink: 0;
+    min-width: 104px;
+    margin-left: 4px;
+}
+
+.scene-influence-status {
+    flex-shrink: 0;
+    margin-left: 6px;
+    color: rgb(170, 190, 210);
+}
+
 .list-panel {
     flex-grow: 1;
     min-height: 120px;
