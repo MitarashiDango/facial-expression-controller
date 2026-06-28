@@ -90,7 +90,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             ExpressionEditModel model,
             string animationClipName = "",
             bool includePreservedCurves = true,
-            bool useTargetRendererAsRoot = false)
+            bool useTargetRendererAsRoot = false,
+            ExpressionOutputSettings outputSettings = null)
         {
             if (model == null)
             {
@@ -104,6 +105,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             };
 
             var rendererPath = useTargetRendererAsRoot ? "" : GetRendererPath(model);
+            var outputDecisions = ExpressionOutputDiffService.ToDecisionMap(
+                ExpressionOutputDiffService.Evaluate(model, outputSettings));
             if (includePreservedCurves)
             {
                 foreach (var preservedCurve in model.preservedCurves)
@@ -141,6 +144,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 if (!entry.ShouldOutput)
                 {
                     RestoreLockedSystemSourceCurve(animationClip, rendererPath, entry);
+                    continue;
+                }
+
+                if (!ShouldWriteManagedBlendShapeCurve(entry, outputDecisions))
+                {
                     continue;
                 }
 
@@ -273,6 +281,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             var blendShapeName = binding.propertyName.Substring("blendShape.".Length);
             return model.entries.Any(entry => entry.name == blendShapeName);
+        }
+
+        private static bool ShouldWriteManagedBlendShapeCurve(
+            BlendShapeEntry entry,
+            IReadOnlyDictionary<BlendShapeEntry, BlendShapeOutputDecision> outputDecisions)
+        {
+            if (entry == null)
+            {
+                return false;
+            }
+
+            if (outputDecisions == null || !outputDecisions.TryGetValue(entry, out var decision))
+            {
+                return entry.ShouldOutput;
+            }
+
+            return decision.shouldWriteCurve;
         }
 
         private static void AddKeyTimes(ICollection<float> keyTimes, AnimationCurve curve)
