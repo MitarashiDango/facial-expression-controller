@@ -90,6 +90,48 @@
     margin-top: 4px;
 }
 
+.output-settings-container {
+    margin-bottom: 6px;
+    min-width: 0;
+}
+
+.output-settings-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    min-width: 0;
+}
+
+.output-mode-field,
+.output-reference-field {
+    min-width: 0;
+    margin-right: 8px;
+}
+
+.output-mode-field {
+    width: 320px;
+}
+
+.output-reference-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 220px;
+}
+
+.output-summary {
+    margin-top: 3px;
+    color: rgb(190, 190, 190);
+}
+
+.preserved-summary {
+    margin-top: 2px;
+    color: rgb(160, 160, 160);
+}
+
+.output-settings-message {
+    margin-top: 4px;
+}
+
 .thumbnail-container {
     margin-bottom: 6px;
     min-width: 0;
@@ -402,6 +444,14 @@
 .blendshape-output-toggle {
     width: 122px;
     margin-left: 6px;
+}
+
+.blendshape-output-status {
+    width: 72px;
+    flex-shrink: 0;
+    margin-left: 6px;
+    color: rgb(170, 190, 210);
+    -unity-text-align: middle-left;
 }
 
 .blendshape-reason {

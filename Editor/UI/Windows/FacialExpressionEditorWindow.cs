@@ -19,12 +19,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private const float PartialImportPreviewOffscreenOffset = 10000f;
         private const string SingleFrameModeLabel = "1 フレーム";
         private const string WeightBlendModeLabel = "ウェイト連動（2 フレーム）";
+        private const string OutputModeAllTargetsLabel = "全ての編集・出力対象";
+        private const string OutputModeSessionBaselineDiffLabel = "セッション開始時の値との差分";
+        private const string OutputModeReferenceClipDiffLabel = "参照クリップとの差分";
         private static readonly List<string> FrameModeChoices = new List<string> { SingleFrameModeLabel, WeightBlendModeLabel };
+        private static readonly List<string> OutputModeChoices = new List<string>
+        {
+            OutputModeAllTargetsLabel,
+            OutputModeSessionBaselineDiffLabel,
+            OutputModeReferenceClipDiffLabel,
+        };
 
         private ObjectField _avatarField;
         private ObjectField _rendererField;
         private ObjectField _clipField;
         private PopupField<string> _frameModeField;
+        private PopupField<string> _outputModeField;
+        private ObjectField _referenceClipField;
         private ToolbarSearchField _searchField;
         private ToolbarMenu _filterMenu;
         private Toggle _previewToggle;
@@ -38,9 +49,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private Button _loadStartFromRendererButton;
         private Slider _previewWeightSlider;
         private HelpBox _messageBox;
+        private HelpBox _outputSettingsMessageBox;
         private VisualElement _weightModeContainer;
         private VisualElement _listContainer;
         private Label _emptyLabel;
+        private Label _outputSummaryLabel;
+        private Label _preservedCurveSummaryLabel;
 
         private ExpressionEditModel _model;
         private BlendShapeListView _blendShapeListView;
@@ -48,13 +62,16 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private PartialImportView _partialImportView;
         private ExpressionPreviewService _previewService;
         private AnimationClip _currentClip;
+        private AnimationClip _referenceClip;
         private string _currentAssetPath;
         private ExpressionFrameMode _loadedSourceFrameMode = ExpressionFrameMode.SingleFrame;
         private ExpressionEditFrame _editingFrame = ExpressionEditFrame.Start;
+        private BlendShapeOutputMode _outputMode = BlendShapeOutputMode.AllTargets;
         private float _previewWeight;
         private bool _previewDirty;
         private bool _showChangedOnly;
         private bool _showEditableOnly;
+        private bool _showOutputOnly;
         private bool _guiBuildRetryScheduled;
         private double _lastPreviewRequestTime;
         private int _partialImportPreviewRequestVersion;
@@ -163,6 +180,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var frameModeContainer = root.Q<VisualElement>("frame-mode-container");
             var frameTabContainer = root.Q<VisualElement>("frame-tab-container");
             var weightPreviewContainer = root.Q<VisualElement>("weight-preview-container");
+            var outputSettingsContainer = root.Q<VisualElement>("output-settings-container");
             var thumbnailContainer = root.Q<VisualElement>("thumbnail-container");
             var partialImportContainer = root.Q<VisualElement>("partial-import-container");
             _weightModeContainer = root.Q<VisualElement>("weight-mode-container");
@@ -254,6 +272,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _loadStartFromRendererButton.AddToClassList("load-start-button");
             weightPreviewContainer.Add(_loadStartFromRendererButton);
 
+            BuildOutputSettingsControls(outputSettingsContainer);
+
             var filterContainer = root.Q<VisualElement>("filter-container");
             _searchField = new ToolbarSearchField();
             _searchField.AddToClassList("search-field");
@@ -264,6 +284,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _filterMenu.AddToClassList("filter-menu");
             _filterMenu.menu.AppendAction("変更された項目のみ表示", _ => ToggleChangedOnlyFilter(), GetChangedOnlyFilterStatus);
             _filterMenu.menu.AppendAction("編集・出力対象のみ表示", _ => ToggleEditableOnlyFilter(), GetEditableOnlyFilterStatus);
+            _filterMenu.menu.AppendAction("出力予定のみ表示", _ => ToggleOutputOnlyFilter(), GetOutputOnlyFilterStatus);
             UpdateFilterMenuText();
             filterContainer.Add(_filterMenu);
 
@@ -279,8 +300,64 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             UpdateButtonStates();
             UpdateFrameModeControls();
+            RefreshOutputDecisionUi();
             ShowMessage("アバターを指定してください。", HelpBoxMessageType.Info);
             return true;
+        }
+
+        private void BuildOutputSettingsControls(VisualElement outputSettingsContainer)
+        {
+            if (outputSettingsContainer == null)
+            {
+                return;
+            }
+
+            outputSettingsContainer.Clear();
+
+            var outputSettingsRow = new VisualElement();
+            outputSettingsRow.AddToClassList("output-settings-row");
+            outputSettingsContainer.Add(outputSettingsRow);
+
+            _outputModeField = new PopupField<string>("出力範囲", OutputModeChoices, GetOutputModeLabel(_outputMode));
+            _outputModeField.AddToClassList("output-mode-field");
+            _outputModeField.labelElement.style.minWidth = 160f;
+            _outputModeField.labelElement.style.width = 180f;
+            _outputModeField.labelElement.style.flexShrink = 0f;
+            _outputModeField.RegisterValueChangedCallback(evt =>
+            {
+                _outputMode = GetOutputModeFromLabel(evt.newValue);
+                OnOutputSettingsChanged();
+            });
+            outputSettingsRow.Add(_outputModeField);
+
+            _referenceClipField = new ObjectField("参照 AnimationClip")
+            {
+                objectType = typeof(AnimationClip),
+                allowSceneObjects = false,
+            };
+            _referenceClipField.AddToClassList("output-reference-field");
+            _referenceClipField.labelElement.style.minWidth = 160f;
+            _referenceClipField.labelElement.style.width = 180f;
+            _referenceClipField.labelElement.style.flexShrink = 0f;
+            _referenceClipField.RegisterValueChangedCallback(evt =>
+            {
+                _referenceClip = evt.newValue as AnimationClip;
+                OnOutputSettingsChanged();
+            });
+            outputSettingsRow.Add(_referenceClipField);
+
+            _outputSummaryLabel = new Label();
+            _outputSummaryLabel.AddToClassList("output-summary");
+            outputSettingsContainer.Add(_outputSummaryLabel);
+
+            _preservedCurveSummaryLabel = new Label();
+            _preservedCurveSummaryLabel.AddToClassList("preserved-summary");
+            outputSettingsContainer.Add(_preservedCurveSummaryLabel);
+
+            _outputSettingsMessageBox = new HelpBox("", HelpBoxMessageType.Info);
+            _outputSettingsMessageBox.AddToClassList("output-settings-message");
+            _outputSettingsMessageBox.AddToClassList("hidden");
+            outputSettingsContainer.Add(_outputSettingsMessageBox);
         }
 
         private void ScheduleBuildGuiRetry()
@@ -481,12 +558,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _loadedSourceFrameMode = _model.frameMode;
                 _editingFrame = ExpressionEditFrame.Start;
                 _previewWeight = 0f;
+                ResetOutputSettings();
             }
             else
             {
                 _loadedSourceFrameMode = ExpressionFrameMode.SingleFrame;
                 _editingFrame = ExpressionEditFrame.Start;
                 _previewWeight = 0f;
+                ResetOutputSettings();
             }
 
             if (_rendererField != null && _rendererField.value != renderer)
@@ -498,6 +577,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _thumbnailCaptureView?.SetModel(_model);
             _partialImportView?.SetModel(_model);
             UpdateFrameModeControls();
+            RefreshOutputDecisionUi();
             if (markDirty)
             {
                 MarkUnsaved();
@@ -530,6 +610,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _blendShapeListView.SetSearchText(_searchField != null ? _searchField.value : "");
             _blendShapeListView.SetShowChangedOnly(_showChangedOnly);
             _blendShapeListView.SetShowEditableOnly(_showEditableOnly);
+            _blendShapeListView.SetShowOutputOnly(_showOutputOnly);
+            RefreshOutputDecisionUi();
         }
 
         private void OnModelChanged()
@@ -1166,6 +1248,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
             UpdateFilterMenuText();
         }
 
+        private void ToggleOutputOnlyFilter()
+        {
+            _showOutputOnly = !_showOutputOnly;
+            _blendShapeListView?.SetShowOutputOnly(_showOutputOnly);
+            UpdateFilterMenuText();
+        }
+
         private DropdownMenuAction.Status GetChangedOnlyFilterStatus(DropdownMenuAction action)
         {
             return _showChangedOnly ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal;
@@ -1176,6 +1265,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return _showEditableOnly ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal;
         }
 
+        private DropdownMenuAction.Status GetOutputOnlyFilterStatus(DropdownMenuAction action)
+        {
+            return _showOutputOnly ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal;
+        }
+
         private void UpdateFilterMenuText()
         {
             if (_filterMenu == null)
@@ -1183,7 +1277,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            var activeFilterCount = (_showChangedOnly ? 1 : 0) + (_showEditableOnly ? 1 : 0);
+            var activeFilterCount = (_showChangedOnly ? 1 : 0)
+                + (_showEditableOnly ? 1 : 0)
+                + (_showOutputOnly ? 1 : 0);
             _filterMenu.text = activeFilterCount > 0 ? $"絞り込み ({activeFilterCount})" : "絞り込み";
         }
 
@@ -1201,7 +1297,15 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            var clip = ExpressionClipIO.ToClip(_model, _currentClip != null ? _currentClip.name : _model.sourceClipName);
+            if (!TryCreateOutputSettingsForSave(out var outputSettings))
+            {
+                return;
+            }
+
+            var clip = ExpressionClipIO.ToClip(
+                _model,
+                _currentClip != null ? _currentClip.name : _model.sourceClipName,
+                outputSettings: outputSettings);
             ExpressionClipIO.SaveClipToAsset(clip, _currentAssetPath);
             DestroyImmediate(clip);
             _currentClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(_currentAssetPath);
@@ -1219,14 +1323,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             var defaultName = _currentClip != null ? _currentClip.name : $"FacialExpression_{(_model.avatarRootObject != null ? _model.avatarRootObject.name : "Avatar")}";
             var defaultDirectory = !string.IsNullOrEmpty(_currentAssetPath) ? System.IO.Path.GetDirectoryName(_currentAssetPath) : "Assets";
-            var clip = ExpressionClipIO.ToClip(_model, defaultName);
-            var filePath = EditorUtility.SaveFilePanelInProject("名前を付けて保存", defaultName, "anim", "アニメーションクリップの保存先を選択してください", defaultDirectory);
-            if (string.IsNullOrEmpty(filePath))
+            if (!TryValidateOutputSettingsForSave(out var outputSettings))
             {
-                DestroyImmediate(clip);
                 return;
             }
 
+            var filePath = EditorUtility.SaveFilePanelInProject("名前を付けて保存", defaultName, "anim", "アニメーションクリップの保存先を選択してください", defaultDirectory);
+            if (string.IsNullOrEmpty(filePath))
+            {
+                return;
+            }
+
+            if (!ConfirmDiffOutputSave(outputSettings))
+            {
+                return;
+            }
+
+            var clip = ExpressionClipIO.ToClip(_model, defaultName, outputSettings: outputSettings);
             ExpressionClipIO.SaveClipToAsset(clip, filePath);
             DestroyImmediate(clip);
             _currentAssetPath = filePath;
@@ -1236,15 +1349,235 @@ namespace MitarashiDango.FacialExpressionController.Editor
             ShowMessage("保存しました。", HelpBoxMessageType.Info);
         }
 
+        private void ResetOutputSettings()
+        {
+            _outputMode = BlendShapeOutputMode.AllTargets;
+            _referenceClip = null;
+            _outputModeField?.SetValueWithoutNotify(GetOutputModeLabel(_outputMode));
+            _referenceClipField?.SetValueWithoutNotify(null);
+        }
+
+        private void OnOutputSettingsChanged()
+        {
+            if (_model != null)
+            {
+                MarkUnsaved();
+                return;
+            }
+
+            RefreshOutputDecisionUi();
+        }
+
+        private ExpressionOutputSettings CreateCurrentOutputSettings()
+        {
+            return new ExpressionOutputSettings
+            {
+                mode = _outputMode,
+                referenceClip = _referenceClip,
+                missingReferencePolicy = MissingReferenceBlendShapePolicy.UseSessionBaseline,
+                tolerance = ExpressionOutputDiffService.DefaultTolerance,
+            };
+        }
+
+        private bool TryCreateOutputSettingsForSave(out ExpressionOutputSettings outputSettings)
+        {
+            if (!TryValidateOutputSettingsForSave(out outputSettings))
+            {
+                return false;
+            }
+
+            return ConfirmDiffOutputSave(outputSettings);
+        }
+
+        private bool TryValidateOutputSettingsForSave(out ExpressionOutputSettings outputSettings)
+        {
+            outputSettings = CreateCurrentOutputSettings();
+            if (!ExpressionOutputDiffService.TryValidateSettings(outputSettings, out var message))
+            {
+                ShowMessage(message, HelpBoxMessageType.Warning);
+                RefreshOutputDecisionUi();
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool ConfirmDiffOutputSave(ExpressionOutputSettings outputSettings)
+        {
+            if (outputSettings == null || outputSettings.mode == BlendShapeOutputMode.AllTargets)
+            {
+                return true;
+            }
+
+            var message = "差分なしのブレンドシェイプカーブは .anim から省略されます。\n"
+                + "既存クリップへ上書き保存すると、省略対象の既存カーブも削除されます。\n"
+                + "値残り防止を優先する場合は「全ての編集・出力対象」を使ってください。";
+            if (outputSettings.mode == BlendShapeOutputMode.ReferenceClipDiff
+                && _model != null
+                && ExpressionOutputDiffService.Summarize(ExpressionOutputDiffService.Evaluate(_model, outputSettings)).intermediateKeyCount > 0)
+            {
+                message += "\n\n参照クリップに中間キーがあります。差分判定には始端と終端のみを使用します。";
+            }
+
+            return EditorUtility.DisplayDialog("差分出力で保存", message, "保存", "キャンセル");
+        }
+
+        private void RefreshOutputDecisionUi()
+        {
+            var outputSettings = CreateCurrentOutputSettings();
+            IReadOnlyList<BlendShapeOutputDecision> decisions = null;
+            var validationMessage = "";
+            var canEvaluate = _model != null && ExpressionOutputDiffService.TryValidateSettings(outputSettings, out validationMessage);
+            if (canEvaluate)
+            {
+                decisions = ExpressionOutputDiffService.Evaluate(_model, outputSettings);
+            }
+            else if (_model == null)
+            {
+                ExpressionOutputDiffService.TryValidateSettings(outputSettings, out validationMessage);
+            }
+
+            var decisionMap = ExpressionOutputDiffService.ToDecisionMap(decisions);
+            _blendShapeListView?.SetOutputDecisions(_outputMode, decisionMap);
+            UpdateOutputSettingsControls(decisions, validationMessage);
+            UpdateButtonStates();
+        }
+
+        private void UpdateOutputSettingsControls(
+            IReadOnlyList<BlendShapeOutputDecision> decisions,
+            string validationMessage)
+        {
+            _outputModeField?.SetValueWithoutNotify(GetOutputModeLabel(_outputMode));
+            _referenceClipField?.SetValueWithoutNotify(_referenceClip);
+
+            var hasModel = _model != null;
+            _outputModeField?.SetEnabled(hasModel);
+            _referenceClipField?.SetEnabled(hasModel && _outputMode == BlendShapeOutputMode.ReferenceClipDiff);
+
+            if (_outputSummaryLabel != null)
+            {
+                _outputSummaryLabel.text = GetOutputSummaryText(decisions, validationMessage);
+                _outputSummaryLabel.EnableInClassList("hidden", !hasModel);
+            }
+
+            if (_preservedCurveSummaryLabel != null)
+            {
+                _preservedCurveSummaryLabel.text = GetPreservedCurveSummaryText();
+                _preservedCurveSummaryLabel.EnableInClassList("hidden", string.IsNullOrEmpty(_preservedCurveSummaryLabel.text));
+            }
+
+            UpdateOutputSettingsMessage(decisions, validationMessage);
+        }
+
+        private string GetOutputSummaryText(
+            IReadOnlyList<BlendShapeOutputDecision> decisions,
+            string validationMessage)
+        {
+            if (_model == null)
+            {
+                return "";
+            }
+
+            if (!string.IsNullOrEmpty(validationMessage))
+            {
+                return "出力予定: - / 差分なし: - / 対象外: -";
+            }
+
+            var summary = ExpressionOutputDiffService.Summarize(decisions);
+            if (_outputMode == BlendShapeOutputMode.AllTargets)
+            {
+                return $"出力予定: {summary.outputCount} / 対象外: {summary.excludedCount}";
+            }
+
+            var text = $"出力予定: {summary.outputCount} / 差分なし: {summary.unchangedCount} / 対象外: {summary.excludedCount}";
+            if (_outputMode == BlendShapeOutputMode.ReferenceClipDiff)
+            {
+                var referenceNotes = new List<string>();
+                if (summary.missingReferenceCount > 0)
+                {
+                    referenceNotes.Add($"参照なし: {summary.missingReferenceCount}");
+                }
+
+                if (summary.ambiguousReferenceCount > 0)
+                {
+                    referenceNotes.Add($"参照曖昧: {summary.ambiguousReferenceCount}");
+                }
+
+                if (summary.intermediateKeyCount > 0)
+                {
+                    referenceNotes.Add($"中間キー: {summary.intermediateKeyCount}");
+                }
+
+                if (referenceNotes.Count > 0)
+                {
+                    text += $" / {string.Join(" / ", referenceNotes)}";
+                }
+            }
+
+            return text;
+        }
+
+        private string GetPreservedCurveSummaryText()
+        {
+            if (_model == null)
+            {
+                return "";
+            }
+
+            var preservedCurveCount = _model.preservedCurves != null ? _model.preservedCurves.Count : 0;
+            var preservedObjectReferenceCurveCount = _model.preservedObjectReferenceCurves != null ? _model.preservedObjectReferenceCurves.Count : 0;
+            if (preservedCurveCount == 0 && preservedObjectReferenceCurveCount == 0)
+            {
+                return "";
+            }
+
+            return $"保全カーブ: {preservedCurveCount} / ObjectReference: {preservedObjectReferenceCurveCount}";
+        }
+
+        private void UpdateOutputSettingsMessage(
+            IReadOnlyList<BlendShapeOutputDecision> decisions,
+            string validationMessage)
+        {
+            if (_outputSettingsMessageBox == null)
+            {
+                return;
+            }
+
+            if (_model == null)
+            {
+                _outputSettingsMessageBox.text = "";
+                _outputSettingsMessageBox.EnableInClassList("hidden", true);
+                return;
+            }
+
+            var message = "";
+            var messageType = HelpBoxMessageType.Info;
+            if (!string.IsNullOrEmpty(validationMessage))
+            {
+                message = validationMessage;
+                messageType = HelpBoxMessageType.Warning;
+            }
+            else if (_outputMode == BlendShapeOutputMode.ReferenceClipDiff
+                && ExpressionOutputDiffService.Summarize(decisions).intermediateKeyCount > 0)
+            {
+                message = "参照クリップに中間キーがあります。差分判定には始端と終端のみを使用します。";
+                messageType = HelpBoxMessageType.Warning;
+            }
+            else if (_outputMode != BlendShapeOutputMode.AllTargets)
+            {
+                message = "差分なしのブレンドシェイプカーブは保存時に省略されます。";
+                messageType = HelpBoxMessageType.Info;
+            }
+
+            _outputSettingsMessageBox.text = message;
+            _outputSettingsMessageBox.messageType = messageType;
+            _outputSettingsMessageBox.EnableInClassList("hidden", string.IsNullOrEmpty(message));
+        }
+
         private void MarkUnsaved()
         {
             hasUnsavedChanges = true;
-            if (_showChangedOnly || _showEditableOnly)
-            {
-                _blendShapeListView?.Refresh();
-            }
-
-            UpdateButtonStates();
+            RefreshOutputDecisionUi();
         }
 
         private bool TryDiscardUnsavedChanges()
@@ -1319,6 +1652,34 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return label == WeightBlendModeLabel ? ExpressionFrameMode.WeightBlend : ExpressionFrameMode.SingleFrame;
         }
 
+        private static string GetOutputModeLabel(BlendShapeOutputMode outputMode)
+        {
+            switch (outputMode)
+            {
+                case BlendShapeOutputMode.SessionBaselineDiff:
+                    return OutputModeSessionBaselineDiffLabel;
+                case BlendShapeOutputMode.ReferenceClipDiff:
+                    return OutputModeReferenceClipDiffLabel;
+                default:
+                    return OutputModeAllTargetsLabel;
+            }
+        }
+
+        private static BlendShapeOutputMode GetOutputModeFromLabel(string label)
+        {
+            if (label == OutputModeSessionBaselineDiffLabel)
+            {
+                return BlendShapeOutputMode.SessionBaselineDiff;
+            }
+
+            if (label == OutputModeReferenceClipDiffLabel)
+            {
+                return BlendShapeOutputMode.ReferenceClipDiff;
+            }
+
+            return BlendShapeOutputMode.AllTargets;
+        }
+
         private void UpdateFrameModeControls()
         {
             var hasModel = _model != null;
@@ -1350,13 +1711,17 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private void UpdateButtonStates()
         {
             var hasModel = _model != null;
+            var canSaveOutput = hasModel
+                && (_outputMode != BlendShapeOutputMode.ReferenceClipDiff || _referenceClip != null);
             _loadButton?.SetEnabled(_clipField != null && _clipField.value != null && hasModel);
-            _saveButton?.SetEnabled(hasModel);
-            _saveAsButton?.SetEnabled(hasModel);
+            _saveButton?.SetEnabled(canSaveOutput);
+            _saveAsButton?.SetEnabled(canSaveOutput);
             _resetButton?.SetEnabled(hasModel);
             _newButton?.SetEnabled(_avatarField != null && _avatarField.value != null && _rendererField != null && _rendererField.value != null);
             _previewToggle?.SetEnabled(_pendingThumbnailCapture == null);
             _frameModeField?.SetEnabled(hasModel);
+            _outputModeField?.SetEnabled(hasModel);
+            _referenceClipField?.SetEnabled(hasModel && _outputMode == BlendShapeOutputMode.ReferenceClipDiff);
             _startFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
             _endFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
             _loadStartFromRendererButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);

@@ -17,7 +17,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private string _searchText = "";
         private bool _showChangedOnly;
         private bool _showEditableOnly;
+        private bool _showOutputOnly;
         private ExpressionEditFrame _editingFrame = ExpressionEditFrame.Start;
+        private BlendShapeOutputMode _outputMode = BlendShapeOutputMode.AllTargets;
+        private IReadOnlyDictionary<BlendShapeEntry, BlendShapeOutputDecision> _outputDecisions =
+            new Dictionary<BlendShapeEntry, BlendShapeOutputDecision>();
         private int _activeUndoGroup = -1;
 
         public event Action Changed;
@@ -50,6 +54,21 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public void SetShowEditableOnly(bool showEditableOnly)
         {
             _showEditableOnly = showEditableOnly;
+            Refresh();
+        }
+
+        public void SetShowOutputOnly(bool showOutputOnly)
+        {
+            _showOutputOnly = showOutputOnly;
+            Refresh();
+        }
+
+        public void SetOutputDecisions(
+            BlendShapeOutputMode outputMode,
+            IReadOnlyDictionary<BlendShapeEntry, BlendShapeOutputDecision> outputDecisions)
+        {
+            _outputMode = outputMode;
+            _outputDecisions = outputDecisions ?? new Dictionary<BlendShapeEntry, BlendShapeOutputDecision>();
             Refresh();
         }
 
@@ -153,7 +172,27 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return false;
             }
 
+            if (_showOutputOnly && !IsOutputScheduled(entry))
+            {
+                return false;
+            }
+
             return !_showChangedOnly || IsChanged(entry);
+        }
+
+        private bool IsOutputScheduled(BlendShapeEntry entry)
+        {
+            if (entry == null)
+            {
+                return false;
+            }
+
+            if (_outputDecisions != null && _outputDecisions.TryGetValue(entry, out var decision))
+            {
+                return decision.shouldWriteCurve;
+            }
+
+            return _outputMode == BlendShapeOutputMode.AllTargets && entry.ShouldOutput;
         }
 
         private static bool IsChanged(BlendShapeEntry entry)
@@ -284,6 +323,36 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return string.Join(", ", reasons);
         }
 
+        private string GetOutputStatusText(BlendShapeEntry entry, out string tooltip)
+        {
+            tooltip = "";
+            if (_outputMode == BlendShapeOutputMode.AllTargets
+                || entry == null
+                || _outputDecisions == null
+                || !_outputDecisions.TryGetValue(entry, out var decision))
+            {
+                return "";
+            }
+
+            tooltip = decision.reason;
+            if (!entry.ShouldOutput)
+            {
+                return "対象外";
+            }
+
+            switch (decision.referenceStatus)
+            {
+                case ReferenceBlendShapeSampleStatus.Missing:
+                    return "参照なし";
+                case ReferenceBlendShapeSampleStatus.Ambiguous:
+                    return "参照曖昧";
+                case ReferenceBlendShapeSampleStatus.IntermediateKeysIgnored:
+                    return "中間キー";
+            }
+
+            return decision.shouldWriteCurve ? "出力予定" : "差分なし";
+        }
+
         private sealed class BlendShapeRow : VisualElement
         {
             private readonly BlendShapeListView _owner;
@@ -291,6 +360,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             private readonly Slider _slider;
             private readonly FloatField _valueField;
             private readonly Toggle _outputToggle;
+            private readonly Label _outputStatusLabel;
             private readonly Label _reasonLabel;
             private BlendShapeEntry _entry;
             private bool _ignoreChange;
@@ -325,6 +395,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _outputToggle.RegisterValueChangedCallback(OnOutputChanged);
                 Add(_outputToggle);
 
+                _outputStatusLabel = new Label();
+                _outputStatusLabel.AddToClassList("blendshape-output-status");
+                Add(_outputStatusLabel);
+
                 _reasonLabel = new Label();
                 _reasonLabel.AddToClassList("blendshape-reason");
                 Add(_reasonLabel);
@@ -344,16 +418,22 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _slider.SetValueWithoutNotify(displayValue);
                 _valueField.SetValueWithoutNotify(displayValue);
                 _outputToggle.SetValueWithoutNotify(entry.ShouldOutput);
+                var outputStatusText = _owner.GetOutputStatusText(entry, out var outputStatusTooltip);
+                _outputStatusLabel.text = outputStatusText;
+                _outputStatusLabel.tooltip = outputStatusTooltip;
                 _reasonLabel.text = GetSystemExclusionText(entry);
 
                 _slider.SetEnabled(canEditValue);
                 _valueField.SetEnabled(canEditValue);
                 _outputToggle.SetEnabled(true);
+                _outputStatusLabel.style.visibility = string.IsNullOrEmpty(outputStatusText) ? Visibility.Hidden : Visibility.Visible;
                 _reasonLabel.style.visibility = isSystemExcluded ? Visibility.Visible : Visibility.Hidden;
                 EnableInClassList("system-excluded", isSystemLocked);
                 EnableInClassList("system-unlocked", isSystemExcluded && !isSystemLocked);
                 EnableInClassList("user-excluded", entry.userExcluded);
                 EnableInClassList("changed", IsChanged(entry));
+                EnableInClassList("output-scheduled", _owner.IsOutputScheduled(entry));
+                EnableInClassList("output-skipped", _owner._outputMode != BlendShapeOutputMode.AllTargets && !_owner.IsOutputScheduled(entry));
 
                 _ignoreChange = false;
             }
