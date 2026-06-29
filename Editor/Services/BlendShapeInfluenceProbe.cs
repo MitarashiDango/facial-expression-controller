@@ -179,6 +179,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
     {
         private const float RaycastEpsilon = 1e-7f;
         private const float MinimumTriangleVertexWeight = 0.0001f;
+        private const float ScaleEpsilon = 1e-7f;
 
         public static bool TryProbe(
             SkinnedMeshRenderer renderer,
@@ -216,13 +217,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
             try
             {
                 var bakedMesh = resolvedContext.GetBakedMesh(blendShapeMesh);
-                renderer.BakeMesh(bakedMesh);
+                BakeSampleMesh(renderer, bakedMesh, out var sampleToWorldMatrix, out var deltaToWorldMatrix);
                 if (bakedMesh.vertexCount != blendShapeMesh.vertexCount)
                 {
                     return false;
                 }
 
-                if (!TryRaycastMesh(bakedMesh, renderer.localToWorldMatrix, worldRay, resolvedContext, out hit))
+                if (!TryRaycastMesh(bakedMesh, sampleToWorldMatrix, worldRay, resolvedContext, out hit))
                 {
                     return false;
                 }
@@ -230,7 +231,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 results = CalculateInfluences(
                     blendShapeMesh,
                     bakedMesh,
-                    renderer.localToWorldMatrix,
+                    sampleToWorldMatrix,
+                    deltaToWorldMatrix,
                     hit,
                     options,
                     resolvedContext);
@@ -351,13 +353,57 @@ namespace MitarashiDango.FacialExpressionController.Editor
             BlendShapeInfluenceHit hit,
             BlendShapeInfluenceProbeOptions options)
         {
-            return CalculateInfluences(blendShapeMesh, sampleMesh, localToWorldMatrix, hit, options, null);
+            return CalculateInfluences(
+                blendShapeMesh,
+                sampleMesh,
+                localToWorldMatrix,
+                localToWorldMatrix,
+                hit,
+                options,
+                null);
         }
 
         public static IReadOnlyList<BlendShapeInfluenceResult> CalculateInfluences(
             Mesh blendShapeMesh,
             Mesh sampleMesh,
             Matrix4x4 localToWorldMatrix,
+            BlendShapeInfluenceHit hit,
+            BlendShapeInfluenceProbeOptions options,
+            BlendShapeInfluenceProbeContext context)
+        {
+            return CalculateInfluences(
+                blendShapeMesh,
+                sampleMesh,
+                localToWorldMatrix,
+                localToWorldMatrix,
+                hit,
+                options,
+                context);
+        }
+
+        public static IReadOnlyList<BlendShapeInfluenceResult> CalculateInfluences(
+            Mesh blendShapeMesh,
+            Mesh sampleMesh,
+            Matrix4x4 sampleToWorldMatrix,
+            Matrix4x4 deltaToWorldMatrix,
+            BlendShapeInfluenceHit hit,
+            BlendShapeInfluenceProbeOptions options)
+        {
+            return CalculateInfluences(
+                blendShapeMesh,
+                sampleMesh,
+                sampleToWorldMatrix,
+                deltaToWorldMatrix,
+                hit,
+                options,
+                null);
+        }
+
+        public static IReadOnlyList<BlendShapeInfluenceResult> CalculateInfluences(
+            Mesh blendShapeMesh,
+            Mesh sampleMesh,
+            Matrix4x4 sampleToWorldMatrix,
+            Matrix4x4 deltaToWorldMatrix,
             BlendShapeInfluenceHit hit,
             BlendShapeInfluenceProbeOptions options,
             BlendShapeInfluenceProbeContext context)
@@ -376,7 +422,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var resolvedContext = context ?? new BlendShapeInfluenceProbeContext();
             var weightedVertices = CollectWeightedVertices(
                 sampleMesh,
-                localToWorldMatrix,
+                sampleToWorldMatrix,
                 hit,
                 Mathf.Max(0f, resolvedOptions.worldRadius),
                 resolvedContext);
@@ -411,7 +457,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 for (var i = 0; i < weightedVertices.Count; i++)
                 {
                     var weightedVertex = weightedVertices[i];
-                    var worldDelta = localToWorldMatrix.MultiplyVector(deltaVertices[weightedVertex.index]);
+                    var worldDelta = deltaToWorldMatrix.MultiplyVector(deltaVertices[weightedVertex.index]);
                     var deltaMagnitude = worldDelta.magnitude;
                     if (deltaMagnitude > maxDelta)
                     {
@@ -452,14 +498,39 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return results.Count == 0 ? Array.Empty<BlendShapeInfluenceResult>() : results.ToArray();
         }
 
+        private static void BakeSampleMesh(
+            SkinnedMeshRenderer renderer,
+            Mesh bakedMesh,
+            out Matrix4x4 sampleToWorldMatrix,
+            out Matrix4x4 deltaToWorldMatrix)
+        {
+            renderer.BakeMesh(bakedMesh, true);
+            sampleToWorldMatrix = CreateBakeMeshUseScaleToWorldMatrix(renderer);
+            deltaToWorldMatrix = renderer.localToWorldMatrix;
+        }
+
+        private static Matrix4x4 CreateBakeMeshUseScaleToWorldMatrix(SkinnedMeshRenderer renderer)
+        {
+            // BakeMesh(..., true) は renderer 自身の localScale を頂点側へ焼き込むため、その分だけ行列側から外す。
+            return renderer.localToWorldMatrix * Matrix4x4.Scale(CreateInverseScale(renderer.transform.localScale));
+        }
+
+        private static Vector3 CreateInverseScale(Vector3 scale)
+        {
+            return new Vector3(
+                Mathf.Abs(scale.x) > ScaleEpsilon ? 1f / scale.x : 0f,
+                Mathf.Abs(scale.y) > ScaleEpsilon ? 1f / scale.y : 0f,
+                Mathf.Abs(scale.z) > ScaleEpsilon ? 1f / scale.z : 0f);
+        }
+
         private static List<BlendShapeInfluenceWeightedVertex> CollectWeightedVertices(
             Mesh sampleMesh,
-            Matrix4x4 localToWorldMatrix,
+            Matrix4x4 sampleToWorldMatrix,
             BlendShapeInfluenceHit hit,
             float worldRadius,
             BlendShapeInfluenceProbeContext context)
         {
-            var worldVertices = context.BuildWorldVertices(sampleMesh, localToWorldMatrix, out var vertexCount);
+            var worldVertices = context.BuildWorldVertices(sampleMesh, sampleToWorldMatrix, out var vertexCount);
             var weightsByIndex = context.WeightsByIndex;
             weightsByIndex.Clear();
 
