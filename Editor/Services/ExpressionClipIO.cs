@@ -337,9 +337,19 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private static void ApplyFrameMode(ExpressionEditModel model, IReadOnlyList<float> frameTimes)
         {
             model.hasIntermediateKeys = frameTimes.Count > 2;
-            model.frameMode = frameTimes.Count == 2 || frameTimes.Count > 2
-                ? ExpressionFrameMode.WeightBlend
-                : ExpressionFrameMode.SingleFrame;
+            if (frameTimes.Count > 2)
+            {
+                model.frameMode = ExpressionFrameMode.WeightBlend;
+                return;
+            }
+
+            if (frameTimes.Count == 2 && !AllSourceCurvesKeepSameEndpointValue(model, frameTimes))
+            {
+                model.frameMode = ExpressionFrameMode.WeightBlend;
+                return;
+            }
+
+            model.frameMode = ExpressionFrameMode.SingleFrame;
         }
 
         private static void ApplyCurveToEntry(ExpressionEditModel model, BlendShapeEntry entry, AnimationCurve curve, IReadOnlyList<float> frameTimes)
@@ -359,9 +369,32 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            entry.value = curve.Evaluate(0f);
+            var singleFrameTime = frameTimes.Count > 0 ? frameTimes[0] : 0f;
+            entry.value = curve.Evaluate(singleFrameTime);
             entry.endValue = entry.value;
             MarkSourceValues(model, entry);
+        }
+
+        private static bool AllSourceCurvesKeepSameEndpointValue(ExpressionEditModel model, IReadOnlyList<float> frameTimes)
+        {
+            var hasSourceCurve = false;
+            var startTime = frameTimes[0];
+            var endTime = frameTimes[frameTimes.Count - 1];
+            foreach (var entry in model.entries)
+            {
+                if (!entry.hasSourceCurve || entry.sourceCurve == null)
+                {
+                    continue;
+                }
+
+                hasSourceCurve = true;
+                if (!Approximately(entry.sourceCurve.Evaluate(startTime), entry.sourceCurve.Evaluate(endTime)))
+                {
+                    return false;
+                }
+            }
+
+            return hasSourceCurve;
         }
 
         private static void MarkSourceValues(ExpressionEditModel model, BlendShapeEntry entry)
@@ -386,7 +419,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return model.hasSourceClip
                 && entry.hasSourceCurve
                 && entry.sourceCurve != null
-                && model.frameMode == ExpressionFrameMode.SingleFrame
                 && model.frameMode == entry.sourceFrameMode
                 && Approximately(entry.value, entry.sourceValue)
                 && Approximately(entry.endValue, entry.sourceEndValue);
