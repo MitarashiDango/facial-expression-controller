@@ -29,6 +29,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public event Action<BlendShapeEntry> PreviewValueChanged;
         public event Action PreviewResetRequested;
 
+        public bool IsGroupedUndoActive => _activeUndoGroup >= 0;
+
         public BlendShapeListView(ExpressionEditModel model, VisualElement container, Label emptyLabel)
         {
             _model = model;
@@ -70,7 +72,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             _outputMode = outputMode;
             _outputDecisions = outputDecisions ?? new Dictionary<BlendShapeEntry, BlendShapeOutputDecision>();
-            Refresh();
+            if (HasVisibleItemsChanged())
+            {
+                Refresh();
+                return;
+            }
+
+            _listView.RefreshItems();
         }
 
         public void SetSpatialInfluenceFilter(IReadOnlyDictionary<int, BlendShapeInfluenceResult> results)
@@ -104,26 +112,48 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public void Refresh()
         {
             _items.Clear();
-
-            if (_model != null)
+            foreach (var entry in EnumerateVisibleEntries())
             {
-                var entries = _model.entries.Where(MatchesFilter);
-                if (_spatialInfluenceResults != null)
-                {
-                    entries = entries
-                        .OrderByDescending(entry => _spatialInfluenceResults[entry.index].Score)
-                        .ThenBy(entry => entry.name, StringComparer.Ordinal);
-                }
-
-                foreach (var entry in entries)
-                {
-                    _items.Add(entry);
-                }
+                _items.Add(entry);
             }
 
             _listView.itemsSource = _items;
             _listView.Rebuild();
             _emptyLabel.EnableInClassList("hidden", _items.Count > 0);
+        }
+
+        private bool HasVisibleItemsChanged()
+        {
+            var index = 0;
+            foreach (var entry in EnumerateVisibleEntries())
+            {
+                if (index >= _items.Count || !ReferenceEquals(_items[index], entry))
+                {
+                    return true;
+                }
+
+                index++;
+            }
+
+            return index != _items.Count;
+        }
+
+        private IEnumerable<BlendShapeEntry> EnumerateVisibleEntries()
+        {
+            if (_model == null)
+            {
+                return Enumerable.Empty<BlendShapeEntry>();
+            }
+
+            var entries = _model.entries.Where(MatchesFilter);
+            if (_spatialInfluenceResults != null)
+            {
+                entries = entries
+                    .OrderByDescending(entry => _spatialInfluenceResults[entry.index].Score)
+                    .ThenBy(entry => entry.name, StringComparer.Ordinal);
+            }
+
+            return entries;
         }
 
         public void ResetEditableValues()
