@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -196,6 +197,37 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
                 Is.EquivalentTo(new[] { "Smile", "Neutral" }));
         }
 
+        [TestCase("OnSliderChanged")]
+        [TestCase("OnValueChanged")]
+        public void BlendShapeListView_ValueChange_DoesNotThrowWhenChangedEventUnbindsRow(string handlerName)
+        {
+            var model = CreateModel(new[] { "Smile" }, new[] { 0f });
+            var listView = new BlendShapeListView(model, new VisualElement(), new Label());
+            var entry = model.entries[0];
+            var row = CreateBoundBlendShapeRow(listView, entry);
+
+            listView.Changed += () => InvokeBlendShapeRowMethod(row, "Unbind");
+
+            InvokeBlendShapeRowFloatHandler(row, handlerName, 40f);
+
+            Assert.That(entry.value, Is.EqualTo(40f).Within(0.0001f));
+        }
+
+        [Test]
+        public void BlendShapeListView_OutputChange_DoesNotThrowWhenChangedEventUnbindsRow()
+        {
+            var model = CreateModel(new[] { "Smile" }, new[] { 0f });
+            var listView = new BlendShapeListView(model, new VisualElement(), new Label());
+            var entry = model.entries[0];
+            var row = CreateBoundBlendShapeRow(listView, entry);
+
+            listView.Changed += () => InvokeBlendShapeRowMethod(row, "Unbind");
+
+            InvokeBlendShapeRowBoolHandler(row, "OnOutputChanged", false);
+
+            Assert.That(entry.userExcluded, Is.True);
+        }
+
         private ExpressionEditModel CreateModel(string[] blendShapeNames, float[] weights)
         {
             var avatarRoot = new GameObject("Avatar");
@@ -276,6 +308,58 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
         {
             var field = typeof(BlendShapeListView).GetField("_items", BindingFlags.Instance | BindingFlags.NonPublic);
             return (IReadOnlyList<BlendShapeEntry>)field.GetValue(listView);
+        }
+
+        private static object CreateBoundBlendShapeRow(BlendShapeListView listView, BlendShapeEntry entry)
+        {
+            var rowType = GetBlendShapeRowType();
+            var row = Activator.CreateInstance(
+                rowType,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                new object[] { listView },
+                null);
+            InvokeBlendShapeRowMethod(row, "Bind", entry);
+            return row;
+        }
+
+        private static Type GetBlendShapeRowType()
+        {
+            var rowType = typeof(BlendShapeListView).GetNestedType("BlendShapeRow", BindingFlags.NonPublic);
+            Assert.That(rowType, Is.Not.Null);
+            return rowType;
+        }
+
+        private static void InvokeBlendShapeRowFloatHandler(object row, string methodName, float newValue)
+        {
+            using (var evt = ChangeEvent<float>.GetPooled(0f, newValue))
+            {
+                InvokeBlendShapeRowMethod(row, methodName, evt);
+            }
+        }
+
+        private static void InvokeBlendShapeRowBoolHandler(object row, string methodName, bool newValue)
+        {
+            using (var evt = ChangeEvent<bool>.GetPooled(true, newValue))
+            {
+                InvokeBlendShapeRowMethod(row, methodName, evt);
+            }
+        }
+
+        private static void InvokeBlendShapeRowMethod(object row, string methodName, params object[] args)
+        {
+            var method = row.GetType().GetMethod(
+                methodName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null);
+            try
+            {
+                method.Invoke(row, args);
+            }
+            catch (TargetInvocationException ex) when (ex.InnerException != null)
+            {
+                throw ex.InnerException;
+            }
         }
     }
 }

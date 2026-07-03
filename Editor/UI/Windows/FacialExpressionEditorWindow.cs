@@ -119,7 +119,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         public override void SaveChanges()
         {
-            Save();
+            if (!TrySave())
+            {
+                throw new OperationCanceledException("表情編集の保存がキャンセルされました。");
+            }
+
+            base.SaveChanges();
         }
 
         public override void DiscardChanges()
@@ -1435,21 +1440,25 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void Save()
         {
+            TrySave();
+        }
+
+        private bool TrySave()
+        {
             if (_model == null)
             {
                 ShowMessage("保存する表情がありません。", HelpBoxMessageType.Warning);
-                return;
+                return false;
             }
 
             if (string.IsNullOrEmpty(_currentAssetPath))
             {
-                SaveAs();
-                return;
+                return TrySaveAs();
             }
 
             if (!TryCreateOutputSettingsForSave(out var outputSettings))
             {
-                return;
+                return false;
             }
 
             var clip = ExpressionClipIO.ToClip(
@@ -1457,46 +1466,61 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _currentClip != null ? _currentClip.name : _model.sourceClipName,
                 outputSettings: outputSettings);
             ExpressionClipIO.SaveClipToAsset(clip, _currentAssetPath);
-            DestroyImmediate(clip);
+            DestroyTemporaryClip(clip);
             _currentClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(_currentAssetPath);
             hasUnsavedChanges = false;
             ShowMessage("保存しました。", HelpBoxMessageType.Info);
+            return true;
         }
 
         private void SaveAs()
         {
+            TrySaveAs();
+        }
+
+        private bool TrySaveAs()
+        {
             if (_model == null)
             {
                 ShowMessage("保存する表情がありません。", HelpBoxMessageType.Warning);
-                return;
+                return false;
             }
 
             var defaultName = _currentClip != null ? _currentClip.name : $"FacialExpression_{(_model.avatarRootObject != null ? _model.avatarRootObject.name : "Avatar")}";
             var defaultDirectory = !string.IsNullOrEmpty(_currentAssetPath) ? System.IO.Path.GetDirectoryName(_currentAssetPath) : "Assets";
             if (!TryValidateOutputSettingsForSave(out var outputSettings))
             {
-                return;
+                return false;
             }
 
             var filePath = EditorUtility.SaveFilePanelInProject("名前を付けて保存", defaultName, "anim", "アニメーションクリップの保存先を選択してください", defaultDirectory);
             if (string.IsNullOrEmpty(filePath))
             {
-                return;
+                return false;
             }
 
             if (!ConfirmDiffOutputSave(outputSettings))
             {
-                return;
+                return false;
             }
 
             var clip = ExpressionClipIO.ToClip(_model, defaultName, outputSettings: outputSettings);
             ExpressionClipIO.SaveClipToAsset(clip, filePath);
-            DestroyImmediate(clip);
+            DestroyTemporaryClip(clip);
             _currentAssetPath = filePath;
             _currentClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(filePath);
             _clipField.SetValueWithoutNotify(_currentClip);
             hasUnsavedChanges = false;
             ShowMessage("保存しました。", HelpBoxMessageType.Info);
+            return true;
+        }
+
+        private static void DestroyTemporaryClip(AnimationClip clip)
+        {
+            if (clip != null && !EditorUtility.IsPersistent(clip))
+            {
+                DestroyImmediate(clip);
+            }
         }
 
         private void ResetOutputSettings()

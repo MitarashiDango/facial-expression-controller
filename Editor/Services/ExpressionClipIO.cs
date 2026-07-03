@@ -182,6 +182,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// <summary>
         /// AnimationClip を指定パスのアセットとして保存する。
         /// </summary>
+        /// <remarks>
+        /// 保存先に AnimationClip アセットが存在しない場合は、渡された <paramref name="clip"/> 自体が
+        /// 新規アセットになる。呼び出し側は保存後に <see cref="EditorUtility.IsPersistent"/> を確認してから破棄すること。
+        /// 既存アセットへの上書き時は内容だけをコピーするため、<paramref name="clip"/> は一時オブジェクトのまま残る。
+        /// </remarks>
         public static void SaveClipToAsset(AnimationClip clip, string filePath)
         {
             var asset = AssetDatabase.LoadAssetAtPath(filePath, typeof(AnimationClip));
