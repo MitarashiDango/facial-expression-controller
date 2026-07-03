@@ -481,11 +481,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     return;
                 }
 
-                _owner.SetValue(_entry, evt.newValue);
+                var entry = _entry;
+                _owner.SetValue(entry, evt.newValue);
+                if (_entry != entry)
+                {
+                    return;
+                }
+
                 _ignoreChange = true;
-                _valueField.SetValueWithoutNotify(_owner.GetDisplayValue(_entry));
-                EnableInClassList("changed", IsChanged(_entry));
-                _ignoreChange = false;
+                try
+                {
+                    _valueField.SetValueWithoutNotify(_owner.GetDisplayValue(entry));
+                    EnableInClassList("changed", IsChanged(entry));
+                }
+                finally
+                {
+                    _ignoreChange = false;
+                }
             }
 
             private void OnValueChanged(ChangeEvent<float> evt)
@@ -495,13 +507,25 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     return;
                 }
 
-                _owner.SetValue(_entry, evt.newValue);
+                var entry = _entry;
+                _owner.SetValue(entry, evt.newValue);
+                if (_entry != entry)
+                {
+                    return;
+                }
+
                 _ignoreChange = true;
-                var displayValue = _owner.GetDisplayValue(_entry);
-                _slider.SetValueWithoutNotify(displayValue);
-                _valueField.SetValueWithoutNotify(displayValue);
-                EnableInClassList("changed", IsChanged(_entry));
-                _ignoreChange = false;
+                try
+                {
+                    var displayValue = _owner.GetDisplayValue(entry);
+                    _slider.SetValueWithoutNotify(displayValue);
+                    _valueField.SetValueWithoutNotify(displayValue);
+                    EnableInClassList("changed", IsChanged(entry));
+                }
+                finally
+                {
+                    _ignoreChange = false;
+                }
             }
 
             private void OnOutputChanged(ChangeEvent<bool> evt)
@@ -511,8 +535,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     return;
                 }
 
-                _owner.SetEditableTarget(_entry, evt.newValue);
-                Bind(_entry);
+                var entry = _entry;
+                _owner.SetEditableTarget(entry, evt.newValue);
+                if (_entry != entry)
+                {
+                    return;
+                }
+
+                Bind(entry);
             }
         }
 
