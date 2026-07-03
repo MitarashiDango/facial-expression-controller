@@ -62,19 +62,21 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private Label _outputSummaryLabel;
         private Label _preservedCurveSummaryLabel;
 
-        private ExpressionEditModel _model;
         private BlendShapeListView _blendShapeListView;
         private ThumbnailCaptureView _thumbnailCaptureView;
         private PartialImportView _partialImportView;
         private ExpressionPreviewService _previewService;
         private BlendShapeInfluenceProbeContext _sceneInfluenceProbeContext;
-        private AnimationClip _currentClip;
-        private AnimationClip _referenceClip;
-        private string _currentAssetPath;
-        private ExpressionFrameMode _loadedSourceFrameMode = ExpressionFrameMode.SingleFrame;
-        private ExpressionEditFrame _editingFrame = ExpressionEditFrame.Start;
-        private BlendShapeOutputMode _outputMode = BlendShapeOutputMode.AllTargets;
-        private float _previewWeight;
+        [SerializeField] private ExpressionEditModel _model;
+        [SerializeField] private AnimationClip _currentClip;
+        [SerializeField] private AnimationClip _referenceClip;
+        [SerializeField] private string _currentAssetPath;
+        [SerializeField] private ExpressionFrameMode _loadedSourceFrameMode = ExpressionFrameMode.SingleFrame;
+        [SerializeField] private ExpressionEditFrame _editingFrame = ExpressionEditFrame.Start;
+        [SerializeField] private BlendShapeOutputMode _outputMode = BlendShapeOutputMode.AllTargets;
+        [SerializeField] private float _previewWeight;
+        [SerializeField] private bool _previewEnabled = true;
+        [SerializeField] private bool _hasSerializedUnsavedChanges;
         private bool _previewDirty;
         private bool _outputDecisionsDirty;
         private bool _showChangedOnly;
@@ -130,7 +132,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         public override void DiscardChanges()
         {
-            hasUnsavedChanges = false;
+            SetUnsavedChanges(false);
             StopPreview();
         }
 
@@ -139,6 +141,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             minSize = new Vector2(560f, 420f);
             saveChangesMessage = "未保存の表情編集があります。保存しますか？";
             _previewService = new ExpressionPreviewService();
+            _previewService.PreviewEnabled = _previewEnabled;
+            hasUnsavedChanges = _hasSerializedUnsavedChanges;
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
             EditorApplication.update += OnEditorUpdate;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
@@ -151,6 +155,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void OnDisable()
         {
+            _previewEnabled = _previewToggle != null ? _previewToggle.value : _previewEnabled;
+            _hasSerializedUnsavedChanges = hasUnsavedChanges;
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             EditorApplication.update -= OnEditorUpdate;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
@@ -170,12 +176,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _thumbnailCaptureView = null;
             _partialImportView?.Dispose();
             _partialImportView = null;
+        }
 
-            if (_model != null)
-            {
-                DestroyImmediate(_model);
-                _model = null;
-            }
+        private void OnDestroy()
+        {
+            DestroyModel();
         }
 
         private bool BuildGui()
@@ -252,10 +257,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             _previewToggle = new Toggle("プレビュー")
             {
-                value = true,
+                value = _previewEnabled,
             };
             _previewToggle.RegisterValueChangedCallback(evt =>
             {
+                _previewEnabled = evt.newValue;
                 if (_previewService != null)
                 {
                     _previewService.PreviewEnabled = evt.newValue;
@@ -345,10 +351,18 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _partialImportView.ApplyRequested += ApplyPartialImportValues;
             _partialImportView.PreviewRequested += RequestPartialImportPreview;
 
-            UpdateButtonStates();
-            UpdateFrameModeControls();
-            RefreshOutputDecisionUi();
-            ShowMessage("アバターを指定してください。", HelpBoxMessageType.Info);
+            if (_model != null)
+            {
+                RestoreSerializedSessionUi();
+            }
+            else
+            {
+                UpdateButtonStates();
+                UpdateFrameModeControls();
+                RefreshOutputDecisionUi();
+                ShowMessage("アバターを指定してください。", HelpBoxMessageType.Info);
+            }
+
             return true;
         }
 
@@ -456,6 +470,34 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
         }
 
+        private void RestoreSerializedSessionUi()
+        {
+            var avatarDescriptor = _model.avatarRootObject != null
+                ? _model.avatarRootObject.GetComponent<VRCAvatarDescriptor>()
+                : null;
+            _previewWeight = Mathf.Clamp01(_previewWeight);
+
+            _avatarField?.SetValueWithoutNotify(avatarDescriptor);
+            _rendererField?.SetValueWithoutNotify(_model.targetRenderer);
+            _clipField?.SetValueWithoutNotify(_currentClip);
+            _previewToggle?.SetValueWithoutNotify(_previewEnabled);
+            _outputModeField?.SetValueWithoutNotify(GetOutputModeLabel(_outputMode));
+            _referenceClipField?.SetValueWithoutNotify(_referenceClip);
+            if (_previewService != null)
+            {
+                _previewService.PreviewEnabled = _previewEnabled;
+            }
+
+            RebuildBlendShapeList();
+            _thumbnailCaptureView?.SetModel(_model);
+            _partialImportView?.SetModel(_model);
+            UpdateFrameModeControls();
+            RefreshOutputDecisionUi();
+            UpdateButtonStates();
+            RequestPreview();
+            ShowMessage(hasUnsavedChanges ? "未保存の編集を復元しました。" : "", HelpBoxMessageType.Info);
+        }
+
         private void SetAvatar(VRCAvatarDescriptor descriptor)
         {
             var currentDescriptor = _model != null && _model.avatarRootObject != null
@@ -540,7 +582,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             SetModel(avatarRootObject, renderer, null, false);
             _currentClip = null;
             _currentAssetPath = null;
-            hasUnsavedChanges = false;
+            SetUnsavedChanges(false);
             ShowMessage("新規セッションを開始しました。", HelpBoxMessageType.Info);
         }
 
@@ -570,7 +612,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             SetModel(avatarRootObject, renderer, clip, false);
             _currentClip = clip;
             _currentAssetPath = AssetDatabase.GetAssetPath(clip);
-            hasUnsavedChanges = false;
+            SetUnsavedChanges(false);
 
             if (_model != null && _model.hasIntermediateKeys)
             {
@@ -595,11 +637,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             ClearSceneInfluenceFilter(false);
             DisposeSceneInfluenceProbeContext();
 
-            if (_model != null)
-            {
-                DestroyImmediate(_model);
-                _model = null;
-            }
+            DestroyModel();
 
             if (avatarRootObject != null && renderer != null)
             {
@@ -640,6 +678,17 @@ namespace MitarashiDango.FacialExpressionController.Editor
             {
                 UpdateThumbnailPreview(false);
             }
+        }
+
+        private void DestroyModel()
+        {
+            if (_model == null)
+            {
+                return;
+            }
+
+            DestroyImmediate(_model);
+            _model = null;
         }
 
         private void RebuildBlendShapeList()
@@ -1447,7 +1496,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             ExpressionClipIO.SaveClipToAsset(clip, _currentAssetPath);
             DestroyTemporaryClip(clip);
             _currentClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(_currentAssetPath);
-            hasUnsavedChanges = false;
+            SetUnsavedChanges(false);
             ShowMessage("保存しました。", HelpBoxMessageType.Info);
             return true;
         }
@@ -1489,7 +1538,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _currentAssetPath = filePath;
             _currentClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(filePath);
             _clipField.SetValueWithoutNotify(_currentClip);
-            hasUnsavedChanges = false;
+            SetUnsavedChanges(false);
             ShowMessage("保存しました。", HelpBoxMessageType.Info);
             return true;
         }
@@ -1751,8 +1800,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void MarkUnsaved()
         {
-            hasUnsavedChanges = true;
+            SetUnsavedChanges(true);
             RequestOutputDecisionUiRefresh();
+        }
+
+        private void SetUnsavedChanges(bool value)
+        {
+            hasUnsavedChanges = value;
+            _hasSerializedUnsavedChanges = value;
         }
 
         private bool TryDiscardUnsavedChanges()
@@ -1769,7 +1824,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 "キャンセル");
             if (discard)
             {
-                hasUnsavedChanges = false;
+                SetUnsavedChanges(false);
             }
 
             return discard;

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace MitarashiDango.FacialExpressionController.Editor
 {
@@ -16,6 +18,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private bool _externalAnimationModeWarningShown;
         private GameObject _currentAvatarRootObject;
         private SkinnedMeshRenderer _currentTargetRenderer;
+        private ExpressionEditModel _lastSampledModel;
+        private ExpressionEditModel _sceneSaveModel;
+        private float _lastPreviewWeight = 1f;
+        private float _sceneSavePreviewWeight = 1f;
+        private bool _restorePreviewAfterSceneSave;
+        private bool _sceneSaveResampleScheduled;
         private readonly Dictionary<int, float> _originalWeights = new Dictionary<int, float>();
 
         public ExpressionPreviewService()
@@ -23,6 +31,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             AssemblyReloadEvents.beforeAssemblyReload += Stop;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             EditorApplication.update += GuardDestroyedTargets;
+            EditorSceneManager.sceneSaving += OnSceneSaving;
+            EditorSceneManager.sceneSaved += OnSceneSaved;
         }
 
         public bool PreviewEnabled
@@ -64,6 +74,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
+            RememberSample(model, previewWeight);
             foreach (var entry in model.entries)
             {
                 var previewValue = GetPreviewValue(model, entry, previewWeight);
@@ -106,6 +117,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
+            RememberSample(model, previewWeight);
             var previewValue = GetPreviewValue(model, entry, previewWeight);
             if (entry.ShouldOutput && HasPreviewValue(entry, previewValue))
             {
@@ -127,6 +139,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             RestoreAllWeights();
             _currentAvatarRootObject = null;
             _currentTargetRenderer = null;
+            _lastSampledModel = null;
+            _lastPreviewWeight = 1f;
             _externalAnimationModeWarningShown = false;
         }
 
@@ -141,7 +155,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
             AssemblyReloadEvents.beforeAssemblyReload -= Stop;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.update -= GuardDestroyedTargets;
+            EditorApplication.delayCall -= ResampleAfterSceneSaved;
+            EditorSceneManager.sceneSaving -= OnSceneSaving;
+            EditorSceneManager.sceneSaved -= OnSceneSaved;
             Stop();
+            _restorePreviewAfterSceneSave = false;
+            _sceneSaveResampleScheduled = false;
+            _sceneSaveModel = null;
         }
 
         private void OnPlayModeStateChanged(PlayModeStateChange state)
@@ -149,6 +169,53 @@ namespace MitarashiDango.FacialExpressionController.Editor
             if (state == PlayModeStateChange.ExitingEditMode || state == PlayModeStateChange.EnteredPlayMode)
             {
                 Stop();
+            }
+        }
+
+        private void OnSceneSaving(Scene scene, string path)
+        {
+            if (_disposed
+                || !_previewEnabled
+                || _originalWeights.Count == 0
+                || _lastSampledModel == null)
+            {
+                return;
+            }
+
+            _restorePreviewAfterSceneSave = true;
+            _sceneSaveModel = _lastSampledModel;
+            _sceneSavePreviewWeight = _lastPreviewWeight;
+            Stop();
+        }
+
+        private void OnSceneSaved(Scene scene)
+        {
+            if (!_restorePreviewAfterSceneSave)
+            {
+                return;
+            }
+
+            _restorePreviewAfterSceneSave = false;
+            if (_sceneSaveResampleScheduled)
+            {
+                return;
+            }
+
+            _sceneSaveResampleScheduled = true;
+            EditorApplication.delayCall += ResampleAfterSceneSaved;
+        }
+
+        private void ResampleAfterSceneSaved()
+        {
+            var model = _sceneSaveModel;
+            var previewWeight = _sceneSavePreviewWeight;
+            _sceneSaveResampleScheduled = false;
+            _sceneSaveModel = null;
+            _sceneSavePreviewWeight = 1f;
+
+            if (!_disposed && _previewEnabled && model != null)
+            {
+                Sample(model, previewWeight);
             }
         }
 
@@ -177,6 +244,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _currentAvatarRootObject = model.avatarRootObject;
             _currentTargetRenderer = model.targetRenderer;
             return _currentTargetRenderer != null;
+        }
+
+        private void RememberSample(ExpressionEditModel model, float previewWeight)
+        {
+            _lastSampledModel = model;
+            _lastPreviewWeight = previewWeight;
         }
 
         private bool ShouldSkipForExternalAnimationMode()
