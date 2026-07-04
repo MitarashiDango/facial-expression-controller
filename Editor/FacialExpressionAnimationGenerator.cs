@@ -38,7 +38,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var ac = feag.FromAvatar(go, null);
             if (ac == null)
             {
-                EditorUtility.DisplayDialog("エラー", "表情用のSkinnedMeshRendererを検出できなかったため、アニメーションクリップを生成できませんでした。", "OK");
+                EditorUtility.DisplayDialog("エラー", "表情アニメーションクリップを生成できませんでした。Console の警告を確認してください。", "OK");
                 return;
             }
 
@@ -90,6 +90,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var model = ExpressionClipIO.CreateModel(avatarRootObject, smr, excludeBlendShapes);
             try
             {
+                if (!ExpressionClipIO.TryValidateModelReferences(model, out var validationMessage))
+                {
+                    Debug.LogWarning($"[FacialExpressionController] Failed to auto-generate facial expression animation: {validationMessage}");
+                    return null;
+                }
+
                 return ExpressionClipIO.ToClip(model, animationClipName);
             }
             finally

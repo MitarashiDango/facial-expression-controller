@@ -22,6 +22,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             model.targetRenderer = targetRenderer;
             model.frameMode = ExpressionFrameMode.SingleFrame;
             model.sourceFrameRate = 60f;
+            model.sourceStartTime = 0f;
+            model.sourceEndTime = WeightBlendEndTime;
 
             PopulateEntriesFromRenderer(model, userExcludedBlendShapes);
             return model;
@@ -104,6 +106,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var frameTimes = NormalizeKeyTimes(targetBlendShapeKeyTimes);
+            ApplySourceTimeRange(model, frameTimes);
             ApplyFrameMode(model, frameTimes);
 
             foreach (var targetBlendShapeCurve in targetBlendShapeCurves)
@@ -394,6 +397,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
             model.frameMode = ExpressionFrameMode.SingleFrame;
         }
 
+        private static void ApplySourceTimeRange(ExpressionEditModel model, IReadOnlyList<float> frameTimes)
+        {
+            model.sourceStartTime = 0f;
+            model.sourceEndTime = WeightBlendEndTime;
+            if (frameTimes == null || frameTimes.Count == 0)
+            {
+                return;
+            }
+
+            model.sourceStartTime = frameTimes[0];
+            model.sourceEndTime = frameTimes[frameTimes.Count - 1];
+            if (model.sourceEndTime - model.sourceStartTime <= KeyTimeTolerance)
+            {
+                model.sourceEndTime = model.sourceStartTime + WeightBlendEndTime;
+            }
+        }
+
         private static void ApplyCurveToEntry(ExpressionEditModel model, BlendShapeEntry entry, AnimationCurve curve, IReadOnlyList<float> frameTimes)
         {
             if (curve == null || curve.length == 0)
@@ -485,7 +505,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             if (model.frameMode == ExpressionFrameMode.WeightBlend)
             {
-                var curve = AnimationCurve.Linear(0f, entry.value, WeightBlendEndTime, entry.endValue);
+                var startTime = model.hasSourceClip ? model.sourceStartTime : 0f;
+                var endTime = model.hasSourceClip ? model.sourceEndTime : WeightBlendEndTime;
+                if (endTime - startTime <= KeyTimeTolerance)
+                {
+                    endTime = startTime + WeightBlendEndTime;
+                }
+
+                var curve = AnimationCurve.Linear(startTime, entry.value, endTime, entry.endValue);
                 for (var i = 0; i < curve.length; i++)
                 {
                     AnimationUtility.SetKeyLeftTangentMode(curve, i, AnimationUtility.TangentMode.Linear);

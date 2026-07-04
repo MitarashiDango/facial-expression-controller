@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using VRC.SDK3.Avatars.Components;
 
 namespace MitarashiDango.FacialExpressionController.Editor.Tests
 {
@@ -204,7 +205,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
         [Test]
         public void Load_IntermediateKeyWeightBlend_DetectsIntermediateKeysAndOnlyRewritesWhenEdited()
         {
-            var renderer = CreateAvatarRenderer("Smile");
+            var renderer = CreateAvatarRenderer("Smile", "Blink");
             var sourceClip = new AnimationClip { name = "IntermediateKeyExpression" };
             _temporaryObjects.Add(sourceClip);
             var sourceCurve = new AnimationCurve(
@@ -220,6 +221,14 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
                 typeof(SkinnedMeshRenderer),
                 "blendShape.Smile",
                 sourceCurve);
+            sourceClip.SetCurve(
+                "Face",
+                typeof(SkinnedMeshRenderer),
+                "blendShape.Blink",
+                new AnimationCurve(
+                    new Keyframe(0f, 0f),
+                    new Keyframe(0.5f, 25f),
+                    new Keyframe(2f, 50f)));
 
             var model = ExpressionClipIO.Load(sourceClip, renderer.transform.root.gameObject, renderer);
             _temporaryObjects.Add(model);
@@ -253,9 +262,14 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             Assert.That(editedCurve, Is.Not.Null);
             Assert.That(editedCurve.length, Is.EqualTo(2));
             Assert.That(editedCurve.keys[0].time, Is.EqualTo(0f).Within(0.0001f));
-            Assert.That(editedCurve.keys[1].time, Is.EqualTo(1f).Within(0.0001f));
+            Assert.That(editedCurve.keys[1].time, Is.EqualTo(2f).Within(0.0001f));
             Assert.That(editedCurve.keys[0].value, Is.EqualTo(10f).Within(0.0001f));
             Assert.That(editedCurve.keys[1].value, Is.EqualTo(90f).Within(0.0001f));
+
+            var editedBlinkCurve = GetBlendShapeCurve(editedClip, "Face", "Blink");
+            Assert.That(editedBlinkCurve, Is.Not.Null);
+            Assert.That(editedBlinkCurve.length, Is.EqualTo(3));
+            Assert.That(editedBlinkCurve.keys[2].time, Is.EqualTo(2f).Within(0.0001f));
         }
 
         [Test]
@@ -347,6 +361,24 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
 
             var ex = Assert.Throws<System.InvalidOperationException>(() => ExpressionClipIO.ToClip(model, "BrokenReference"));
             Assert.That(ex.Message, Does.Contain("Skinned Mesh Renderer"));
+        }
+
+        [Test]
+        public void FromAvatar_InvalidResolvedRenderer_ReturnsNullInsteadOfThrowing()
+        {
+            var avatarRoot = new GameObject("Avatar");
+            var face = new GameObject("Face");
+            face.transform.SetParent(avatarRoot.transform, false);
+            var renderer = face.AddComponent<SkinnedMeshRenderer>();
+            var descriptor = avatarRoot.AddComponent<VRCAvatarDescriptor>();
+            descriptor.lipSync = VRC.SDKBase.VRC_AvatarDescriptor.LipSyncStyle.VisemeBlendShape;
+            descriptor.VisemeSkinnedMesh = renderer;
+            _temporaryObjects.Add(avatarRoot);
+
+            var generator = new FacialExpressionAnimationGenerator();
+            var clip = generator.FromAvatar("Invalid", avatarRoot, null);
+
+            Assert.That(clip, Is.Null);
         }
 
         private static string GenerateAssetPath(string fileName)
