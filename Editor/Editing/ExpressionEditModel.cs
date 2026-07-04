@@ -25,6 +25,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         LipSync = 1 << 1,
         EyeControl = 1 << 2,
         Empty = 1 << 3,
+        Duplicate = 1 << 4,
     }
 
     public class ExpressionEditModel : ScriptableObject
@@ -69,7 +70,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public bool userExcluded;
 
         public bool IsSystemExcluded => systemExclusion != BlendShapeSystemExclusionReason.None;
-        public bool IsSystemLocked => IsSystemExcluded && !systemExclusionUnlocked;
+        public bool IsDuplicateName => (systemExclusion & BlendShapeSystemExclusionReason.Duplicate) != 0;
+        public bool IsSystemLocked => IsSystemExcluded && (!systemExclusionUnlocked || IsDuplicateName);
         public bool ShouldOutput => !IsSystemLocked && !userExcluded;
     }
 

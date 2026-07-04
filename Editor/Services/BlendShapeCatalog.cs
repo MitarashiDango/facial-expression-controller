@@ -26,18 +26,24 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var mesh = smr.sharedMesh;
-            var mmdBlendShapeSet = new HashSet<string>(GetMmdBlendShapes());
-            var lipSyncBlendShapeSet = new HashSet<string>(GetLipSyncBlendShapes(ad));
-            var eyeControlBlendShapeSet = new HashSet<string>(GetEyeControlBlendShapes(ad));
-            var emptyBlendShapeSet = new HashSet<string>(BlendShapeUtil.FindEmptyBlendShapes(smr));
+            var mmdBlendShapeSet = new HashSet<string>(GetMmdBlendShapes(), StringComparer.Ordinal);
+            var lipSyncBlendShapeSet = new HashSet<string>(GetLipSyncBlendShapes(ad), StringComparer.Ordinal);
+            var eyeControlBlendShapeSet = new HashSet<string>(GetEyeControlBlendShapes(ad), StringComparer.Ordinal);
+            var emptyBlendShapeSet = new HashSet<string>(BlendShapeUtil.FindEmptyBlendShapes(smr), StringComparer.Ordinal);
             var userExcludedBlendShapeSet = userExcludedBlendShapes != null
-                ? new HashSet<string>(userExcludedBlendShapes)
-                : new HashSet<string>();
+                ? new HashSet<string>(userExcludedBlendShapes, StringComparer.Ordinal)
+                : new HashSet<string>(StringComparer.Ordinal);
+            var seenBlendShapeNames = new HashSet<string>(StringComparer.Ordinal);
 
             for (var i = 0; i < mesh.blendShapeCount; i++)
             {
                 var blendShapeName = mesh.GetBlendShapeName(i);
                 var exclusion = BlendShapeSystemExclusionReason.None;
+
+                if (!seenBlendShapeNames.Add(blendShapeName))
+                {
+                    exclusion |= BlendShapeSystemExclusionReason.Duplicate;
+                }
 
                 if (mmdBlendShapeSet.Contains(blendShapeName))
                 {

@@ -242,6 +242,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 allowSceneObjects = false,
             };
             ConfigureTargetField(_clipField);
+            _clipField.RegisterValueChangedCallback(_ => UpdateButtonStates());
             targetContainer.Add(_clipField);
 
             _newButton = new Button(CreateNewSession) { text = "新規" };
@@ -521,7 +522,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 resolvedRenderer = descriptor.GetComponentsInChildren<SkinnedMeshRenderer>(true).FirstOrDefault(smr => smr.sharedMesh != null);
             }
 
-            SetModel(avatarRootObject, resolvedRenderer, null, false);
+            SetModel(avatarRootObject, resolvedRenderer, null);
 
             if (descriptor == null)
             {
@@ -561,7 +562,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 avatarRootObject = rendererAvatarRootObject;
             }
 
-            SetModel(avatarRootObject, renderer, null, false);
+            SetModel(avatarRootObject, renderer, null);
             if (avatarRootObject != null && renderer != null)
             {
                 ShowMessage("", HelpBoxMessageType.Info);
@@ -579,7 +580,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var renderer = _rendererField.value as SkinnedMeshRenderer;
             var avatarRootObject = avatarDescriptor != null ? avatarDescriptor.gameObject : null;
 
-            SetModel(avatarRootObject, renderer, null, false);
+            SetModel(avatarRootObject, renderer, null);
             _currentClip = null;
             _currentAssetPath = null;
             SetUnsavedChanges(false);
@@ -609,7 +610,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            SetModel(avatarRootObject, renderer, clip, false);
+            SetModel(avatarRootObject, renderer, clip);
             _currentClip = clip;
             _currentAssetPath = AssetDatabase.GetAssetPath(clip);
             SetUnsavedChanges(false);
@@ -628,7 +629,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
         }
 
-        private void SetModel(GameObject avatarRootObject, SkinnedMeshRenderer renderer, AnimationClip sourceClip, bool markDirty)
+        private void SetModel(GameObject avatarRootObject, SkinnedMeshRenderer renderer, AnimationClip sourceClip)
         {
             CancelPendingThumbnailCapture();
             InvalidatePartialImportPreview();
@@ -667,10 +668,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _partialImportView?.SetModel(_model);
             UpdateFrameModeControls();
             RefreshOutputDecisionUi();
-            if (markDirty)
-            {
-                MarkUnsaved();
-            }
 
             UpdateButtonStates();
             RequestPreview();
@@ -1473,9 +1470,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private bool TrySave()
         {
-            if (_model == null)
+            if (!TryValidateModelReferencesForSave())
             {
-                ShowMessage("保存する表情がありません。", HelpBoxMessageType.Warning);
                 return false;
             }
 
@@ -1508,9 +1504,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private bool TrySaveAs()
         {
-            if (_model == null)
+            if (!TryValidateModelReferencesForSave())
             {
-                ShowMessage("保存する表情がありません。", HelpBoxMessageType.Warning);
                 return false;
             }
 
@@ -1804,6 +1799,17 @@ namespace MitarashiDango.FacialExpressionController.Editor
             RequestOutputDecisionUiRefresh();
         }
 
+        private bool TryValidateModelReferencesForSave()
+        {
+            if (ExpressionClipIO.TryValidateModelReferences(_model, out var message))
+            {
+                return true;
+            }
+
+            ShowMessage(message, HelpBoxMessageType.Warning);
+            return false;
+        }
+
         private void SetUnsavedChanges(bool value)
         {
             hasUnsavedChanges = value;
@@ -1925,7 +1931,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _editingFrame = ExpressionEditFrame.Start;
                 SetPreviewWeightWithoutNotify(0f);
                 _blendShapeListView?.SetEditingFrame(_editingFrame);
-                _partialImportView?.SetEditingFrame(_editingFrame);
             }
 
             _startFrameButton?.SetEnabled(isWeightBlend);
@@ -1980,7 +1985,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void OnEditorUpdate()
         {
-            UpdateButtonStates();
             FlushOutputDecisionUiRefreshIfReady();
 
             if (_pendingPartialImportPreviewCapture != null
