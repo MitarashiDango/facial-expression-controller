@@ -18,12 +18,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
     public static class ExpressionBlendShapeClipSampler
     {
         private const string BlendShapePrefix = "blendShape.";
+        private static BlendShapeCurveCache _curveCache;
+        private static SampleCache _sampleCache;
 
         public static IReadOnlyDictionary<string, ReferenceBlendShapeSample> Sample(
             AnimationClip referenceClip,
             ExpressionEditModel model)
         {
-            var result = new Dictionary<string, ReferenceBlendShapeSample>();
+            var result = new Dictionary<string, ReferenceBlendShapeSample>(StringComparer.Ordinal);
             if (referenceClip == null || model == null || model.entries == null)
             {
                 return result;
@@ -32,12 +34,26 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var rendererPath = model.targetRenderer != null
                 ? MiscUtil.GetPathInHierarchy(model.targetRenderer.gameObject, model.avatarRootObject)
                 : null;
-            var curves = AnimationUtility.GetCurveBindings(referenceClip)
-                .Where(IsBlendShapeBinding)
-                .Select(binding => new BlendShapeCurve(binding, AnimationUtility.GetEditorCurve(referenceClip, binding)))
-                .Where(curve => curve.Curve != null && curve.Curve.length > 0)
-                .ToList();
+            var entryNames = GetEntryNames(model);
+            var dirtyCount = EditorUtility.GetDirtyCount(referenceClip);
+            if (_sampleCache != null && _sampleCache.Matches(referenceClip, dirtyCount, rendererPath, entryNames))
+            {
+                return _sampleCache.Samples;
+            }
 
+            var curves = GetBlendShapeCurves(referenceClip, dirtyCount);
+            foreach (var entryName in entryNames)
+            {
+                result[entryName] = ResolveSample(entryName, rendererPath, curves);
+            }
+
+            _sampleCache = new SampleCache(referenceClip, dirtyCount, rendererPath, entryNames, result);
+            return result;
+        }
+
+        private static List<string> GetEntryNames(ExpressionEditModel model)
+        {
+            var result = new List<string>();
             foreach (var entry in model.entries)
             {
                 if (entry == null || string.IsNullOrEmpty(entry.name))
@@ -45,10 +61,31 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     continue;
                 }
 
-                result[entry.name] = ResolveSample(entry.name, rendererPath, curves);
+                if (result.Contains(entry.name))
+                {
+                    continue;
+                }
+
+                result.Add(entry.name);
             }
 
             return result;
+        }
+
+        private static IReadOnlyList<BlendShapeCurve> GetBlendShapeCurves(AnimationClip referenceClip, int dirtyCount)
+        {
+            if (_curveCache != null && _curveCache.Matches(referenceClip, dirtyCount))
+            {
+                return _curveCache.Curves;
+            }
+
+            var curves = AnimationUtility.GetCurveBindings(referenceClip)
+                .Where(IsBlendShapeBinding)
+                .Select(binding => new BlendShapeCurve(binding, AnimationUtility.GetEditorCurve(referenceClip, binding)))
+                .Where(curve => curve.Curve != null && curve.Curve.length > 0)
+                .ToList();
+            _curveCache = new BlendShapeCurveCache(referenceClip, dirtyCount, curves);
+            return curves;
         }
 
         private static ReferenceBlendShapeSample ResolveSample(
@@ -128,6 +165,73 @@ namespace MitarashiDango.FacialExpressionController.Editor
             public EditorCurveBinding Binding { get; }
             public AnimationCurve Curve { get; }
             public string BlendShapeName { get; }
+        }
+
+        private sealed class BlendShapeCurveCache
+        {
+            public BlendShapeCurveCache(AnimationClip referenceClip, int dirtyCount, IReadOnlyList<BlendShapeCurve> curves)
+            {
+                ReferenceClip = referenceClip;
+                DirtyCount = dirtyCount;
+                Curves = curves;
+            }
+
+            public AnimationClip ReferenceClip { get; }
+            public int DirtyCount { get; }
+            public IReadOnlyList<BlendShapeCurve> Curves { get; }
+
+            public bool Matches(AnimationClip referenceClip, int dirtyCount)
+            {
+                return ReferenceEquals(ReferenceClip, referenceClip) && DirtyCount == dirtyCount;
+            }
+        }
+
+        private sealed class SampleCache
+        {
+            public SampleCache(
+                AnimationClip referenceClip,
+                int dirtyCount,
+                string rendererPath,
+                IReadOnlyList<string> entryNames,
+                IReadOnlyDictionary<string, ReferenceBlendShapeSample> samples)
+            {
+                ReferenceClip = referenceClip;
+                DirtyCount = dirtyCount;
+                RendererPath = rendererPath;
+                EntryNames = entryNames.ToArray();
+                Samples = samples;
+            }
+
+            public AnimationClip ReferenceClip { get; }
+            public int DirtyCount { get; }
+            public string RendererPath { get; }
+            public string[] EntryNames { get; }
+            public IReadOnlyDictionary<string, ReferenceBlendShapeSample> Samples { get; }
+
+            public bool Matches(
+                AnimationClip referenceClip,
+                int dirtyCount,
+                string rendererPath,
+                IReadOnlyList<string> entryNames)
+            {
+                if (!ReferenceEquals(ReferenceClip, referenceClip)
+                    || DirtyCount != dirtyCount
+                    || !string.Equals(RendererPath, rendererPath, StringComparison.Ordinal)
+                    || EntryNames.Length != entryNames.Count)
+                {
+                    return false;
+                }
+
+                for (var i = 0; i < EntryNames.Length; i++)
+                {
+                    if (!string.Equals(EntryNames[i], entryNames[i], StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
         }
     }
 }

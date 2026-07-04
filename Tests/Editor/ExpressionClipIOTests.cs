@@ -310,6 +310,45 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             AssertBlendShapeValue(referenceDiffClip, "Face", "Blink", 25f);
         }
 
+        [Test]
+        public void ToClip_DuplicateEntry_DoesNotOverwriteEditableEntry()
+        {
+            var renderer = CreateAvatarRenderer("Smile");
+            var model = ExpressionClipIO.CreateModel(renderer.transform.root.gameObject, renderer);
+            _temporaryObjects.Add(model);
+            model.entries[0].value = 10f;
+            model.entries.Add(new BlendShapeEntry
+            {
+                index = 1,
+                name = "Smile",
+                value = 90f,
+                endValue = 90f,
+                initialValue = 0f,
+                systemExclusion = BlendShapeSystemExclusionReason.Duplicate,
+                systemExclusionUnlocked = true,
+            });
+
+            var clip = ExpressionClipIO.ToClip(model, "DuplicateName");
+            _temporaryObjects.Add(clip);
+
+            Assert.That(model.entries[1].IsSystemLocked, Is.True);
+            Assert.That(model.entries[1].ShouldOutput, Is.False);
+            AssertBlendShapeValue(clip, "Face", "Smile", 10f);
+        }
+
+        [Test]
+        public void ToClip_DestroyedTargetRenderer_ThrowsBeforeWritingBrokenPath()
+        {
+            var renderer = CreateAvatarRenderer("Smile");
+            var model = ExpressionClipIO.CreateModel(renderer.transform.root.gameObject, renderer);
+            _temporaryObjects.Add(model);
+
+            Object.DestroyImmediate(renderer);
+
+            var ex = Assert.Throws<System.InvalidOperationException>(() => ExpressionClipIO.ToClip(model, "BrokenReference"));
+            Assert.That(ex.Message, Does.Contain("Skinned Mesh Renderer"));
+        }
+
         private static string GenerateAssetPath(string fileName)
         {
             return AssetDatabase.GenerateUniqueAssetPath($"Assets/{fileName}");

@@ -440,9 +440,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             Undo.RecordObject(group, "表情サムネイルを割り当て");
             iconProperty.objectReferenceValue = _capturedTexture;
-            serializedObject.ApplyModifiedProperties();
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(group);
-            AssetDatabase.SaveAssets();
             MessageRequested?.Invoke("メニューアイコンに設定しました。", HelpBoxMessageType.Info);
         }
 

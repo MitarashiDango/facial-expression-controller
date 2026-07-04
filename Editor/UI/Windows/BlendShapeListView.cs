@@ -381,6 +381,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 reasons.Add("空");
             }
 
+            if ((entry.systemExclusion & BlendShapeSystemExclusionReason.Duplicate) != 0)
+            {
+                reasons.Add("同名");
+            }
+
             return string.Join(", ", reasons);
         }
 
@@ -479,6 +484,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _slider.SetValueWithoutNotify(displayValue);
                 _valueField.SetValueWithoutNotify(displayValue);
                 _outputToggle.SetValueWithoutNotify(entry.ShouldOutput);
+                _outputToggle.tooltip = entry.IsDuplicateName
+                    ? "同じ名前のブレンドシェイプは .anim 上で区別できないため、2 個目以降は編集・出力対象にできません。"
+                    : "編集・出力対象にするかどうかを切り替える";
                 var outputStatusText = _owner.GetOutputStatusText(entry, out var outputStatusTooltip);
                 _outputStatusLabel.text = outputStatusText;
                 _outputStatusLabel.tooltip = outputStatusTooltip;
@@ -486,7 +494,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
                 _slider.SetEnabled(canEditValue);
                 _valueField.SetEnabled(canEditValue);
-                _outputToggle.SetEnabled(true);
+                _outputToggle.SetEnabled(!entry.IsDuplicateName);
                 _outputStatusLabel.style.visibility = string.IsNullOrEmpty(outputStatusText) ? Visibility.Hidden : Visibility.Visible;
                 _reasonLabel.style.visibility = isSystemExcluded ? Visibility.Visible : Visibility.Hidden;
                 EnableInClassList("system-excluded", isSystemLocked);

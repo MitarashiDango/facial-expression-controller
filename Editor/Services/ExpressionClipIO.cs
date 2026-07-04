@@ -28,6 +28,45 @@ namespace MitarashiDango.FacialExpressionController.Editor
         }
 
         /// <summary>
+        /// 保存に必要なアバターと Skinned Mesh Renderer の参照が残っているか確認する。
+        /// </summary>
+        public static bool TryValidateModelReferences(ExpressionEditModel model, out string message)
+        {
+            if (model == null)
+            {
+                message = "保存する表情がありません。";
+                return false;
+            }
+
+            if (model.avatarRootObject == null)
+            {
+                message = "対象アバターがシーンから削除されています。アバターを選び直してください。";
+                return false;
+            }
+
+            if (model.targetRenderer == null)
+            {
+                message = "対象 Skinned Mesh Renderer がシーンから削除されています。対象を選び直してください。";
+                return false;
+            }
+
+            if (model.targetRenderer.sharedMesh == null)
+            {
+                message = "対象 Skinned Mesh Renderer にメッシュがありません。対象を選び直してください。";
+                return false;
+            }
+
+            if (!model.targetRenderer.transform.IsChildOf(model.avatarRootObject.transform))
+            {
+                message = "対象 Skinned Mesh Renderer は選択中アバター配下のものを指定してください。";
+                return false;
+            }
+
+            message = "";
+            return true;
+        }
+
+        /// <summary>
         /// AnimationClip を読み込み、編集対象外カーブを保全した編集モデルを作成する。
         /// </summary>
         public static ExpressionEditModel Load(AnimationClip clip, GameObject avatarRootObject, SkinnedMeshRenderer targetRenderer, IEnumerable<string> userExcludedBlendShapes = null)
@@ -47,6 +86,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 .GroupBy(entry => entry.name)
                 .ToDictionary(group => group.Key, group => group.First());
             var targetBlendShapeKeyTimes = new List<float>();
+            var targetBlendShapeCurves = new List<TargetBlendShapeCurve>();
 
             foreach (var binding in AnimationUtility.GetCurveBindings(clip))
             {
@@ -56,6 +96,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     AddKeyTimes(targetBlendShapeKeyTimes, curve);
                     entry.hasSourceCurve = true;
                     entry.sourceCurve = CopyCurve(curve);
+                    targetBlendShapeCurves.Add(new TargetBlendShapeCurve(entry, curve));
                     continue;
                 }
 
@@ -65,13 +106,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var frameTimes = NormalizeKeyTimes(targetBlendShapeKeyTimes);
             ApplyFrameMode(model, frameTimes);
 
-            foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+            foreach (var targetBlendShapeCurve in targetBlendShapeCurves)
             {
-                var curve = AnimationUtility.GetEditorCurve(clip, binding);
-                if (TryGetTargetBlendShapeEntry(binding, rendererPath, entryByName, out var entry))
-                {
-                    ApplyCurveToEntry(model, entry, curve, frameTimes);
-                }
+                ApplyCurveToEntry(model, targetBlendShapeCurve.Entry, targetBlendShapeCurve.Curve, frameTimes);
             }
 
             foreach (var binding in AnimationUtility.GetObjectReferenceCurveBindings(clip))
@@ -96,6 +133,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
             if (model == null)
             {
                 throw new ArgumentNullException(nameof(model));
+            }
+
+            if (!TryValidateModelReferences(model, out var validationMessage))
+            {
+                throw new InvalidOperationException(validationMessage);
             }
 
             var animationClip = new AnimationClip
@@ -456,6 +498,18 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var animationCurve = new AnimationCurve();
             animationCurve.AddKey(0f, entry.value);
             return animationCurve;
+        }
+
+        private sealed class TargetBlendShapeCurve
+        {
+            public TargetBlendShapeCurve(BlendShapeEntry entry, AnimationCurve curve)
+            {
+                Entry = entry;
+                Curve = curve;
+            }
+
+            public BlendShapeEntry Entry { get; }
+            public AnimationCurve Curve { get; }
         }
     }
 }
