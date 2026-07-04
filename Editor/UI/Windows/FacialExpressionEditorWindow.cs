@@ -79,6 +79,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         [SerializeField] private bool _hasSerializedUnsavedChanges;
         private bool _previewDirty;
         private bool _outputDecisionsDirty;
+        private bool _partialImportRefreshDirty;
         private bool _showChangedOnly;
         private bool _showEditableOnly;
         private bool _showOutputOnly;
@@ -143,6 +144,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _previewService = new ExpressionPreviewService();
             _previewService.PreviewEnabled = _previewEnabled;
             hasUnsavedChanges = _hasSerializedUnsavedChanges;
+            if (_model == null)
+            {
+                SetUnsavedChanges(false);
+            }
+
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
             EditorApplication.update += OnEditorUpdate;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
@@ -167,6 +173,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             ClearSceneInfluenceFilter(false);
             DisposeSceneInfluenceProbeContext();
             _outputDecisionsDirty = false;
+            _partialImportRefreshDirty = false;
             CancelPendingPartialImportPreviewCapture();
             CancelPendingThumbnailCapture();
             StopPreview();
@@ -185,6 +192,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private bool BuildGui()
         {
+            if (_model == null)
+            {
+                SetUnsavedChanges(false);
+            }
+
             rootVisualElement.Clear();
 
             var mainUxmlAsset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(MainUxmlPath);
@@ -617,7 +629,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             if (_model != null && _model.hasIntermediateKeys)
             {
-                ShowMessage("3 つ以上のキーを持つクリップです。始端と終端のみを読み込みました。保存すると中間キーは出力されません。", HelpBoxMessageType.Warning);
+                ShowMessage("3 つ以上のキーを持つクリップです。未編集の項目は元カーブを保持し、編集した項目は始端と終端の直線カーブとして保存されます。", HelpBoxMessageType.Warning);
             }
             else if (_loadedSourceFrameMode == ExpressionFrameMode.WeightBlend)
             {
@@ -633,6 +645,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             CancelPendingThumbnailCapture();
             InvalidatePartialImportPreview();
+            _partialImportRefreshDirty = false;
             StopPreview();
             SetSceneInfluenceFilterEnabled(false);
             ClearSceneInfluenceFilter(false);
@@ -718,7 +731,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void OnModelChanged()
         {
-            _partialImportView?.Refresh();
+            RequestPartialImportViewRefresh();
             MarkUnsaved();
             RequestPreview();
         }
@@ -1027,36 +1040,80 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             _pendingPartialImportPreviewCapture = null;
+            if (capture.RequestVersion != _partialImportPreviewRequestVersion
+                || _model == null
+                || _thumbnailCaptureView == null)
+            {
+                capture.DisposePreparedObjects();
+                return;
+            }
 
-            Texture2D previewTexture = null;
+            if (!capture.IsPrepared)
+            {
+                PreparePendingPartialImportPreviewCapture(capture);
+                return;
+            }
+
+            CapturePreparedPartialImportPreview(capture);
+        }
+
+        private void PreparePendingPartialImportPreviewCapture(PartialImportPreviewCapture capture)
+        {
             ExpressionEditModel previewModel = null;
             GameObject previewAvatarRootObject = null;
             try
             {
-                if (capture.RequestVersion == _partialImportPreviewRequestVersion
-                    && _model != null
-                    && _thumbnailCaptureView != null)
+                previewModel = CreatePartialImportPreviewModel(capture.Values, out previewAvatarRootObject, out var appliedCount);
+                if (previewModel == null
+                    || previewAvatarRootObject == null
+                    || previewModel.targetRenderer == null
+                    || appliedCount == 0)
                 {
-                    previewModel = CreatePartialImportPreviewModel(capture.Values, out previewAvatarRootObject, out var appliedCount);
-                    if (previewModel == null
-                        || previewAvatarRootObject == null
-                        || previewModel.targetRenderer == null
-                        || appliedCount == 0)
-                    {
-                        _partialImportView?.ClearPreviewTexture();
-                        return;
-                    }
-
-                    ApplyPartialImportPreviewModelWeights(
-                        previewModel.targetRenderer,
-                        previewModel,
-                        GetPartialImportPreviewWeight(previewModel),
-                        capture.Values);
-
-                    previewTexture = ThumbnailCaptureService.Capture(previewModel, _thumbnailCaptureView.Settings);
-                    _partialImportView?.SetPreviewTexture(previewTexture);
-                    previewTexture = null;
+                    _partialImportView?.ClearPreviewTexture();
+                    return;
                 }
+
+                ApplyPartialImportPreviewModelWeights(
+                    previewModel.targetRenderer,
+                    previewModel,
+                    GetPartialImportPreviewWeight(previewModel),
+                    capture.Values);
+
+                capture.SetPreparedObjects(previewModel, previewAvatarRootObject);
+                previewModel = null;
+                previewAvatarRootObject = null;
+                _pendingPartialImportPreviewCapture = capture;
+                _partialImportPreviewCaptureReadyTime = EditorApplication.timeSinceStartup + PreviewDebounceSeconds;
+                EditorApplication.QueuePlayerLoopUpdate();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[FacialExpressionController] Partial import preview capture failed: {ex}");
+                _partialImportView?.ClearPreviewTexture();
+                ShowMessage("部分取り込みプレビューに失敗しました。コンソールを確認してください。", HelpBoxMessageType.Error);
+            }
+            finally
+            {
+                if (previewModel != null)
+                {
+                    DestroyImmediate(previewModel);
+                }
+
+                if (previewAvatarRootObject != null)
+                {
+                    DestroyImmediate(previewAvatarRootObject);
+                }
+            }
+        }
+
+        private void CapturePreparedPartialImportPreview(PartialImportPreviewCapture capture)
+        {
+            Texture2D previewTexture = null;
+            try
+            {
+                previewTexture = ThumbnailCaptureService.Capture(capture.PreviewModel, _thumbnailCaptureView.Settings);
+                _partialImportView?.SetPreviewTexture(previewTexture);
+                previewTexture = null;
             }
             catch (Exception ex)
             {
@@ -1071,20 +1128,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     DestroyImmediate(previewTexture);
                 }
 
-                if (previewModel != null)
-                {
-                    DestroyImmediate(previewModel);
-                }
-
-                if (previewAvatarRootObject != null)
-                {
-                    DestroyImmediate(previewAvatarRootObject);
-                }
+                capture.DisposePreparedObjects();
             }
         }
 
         private void CancelPendingPartialImportPreviewCapture()
         {
+            _pendingPartialImportPreviewCapture?.DisposePreparedObjects();
             _pendingPartialImportPreviewCapture = null;
         }
 
@@ -1225,6 +1275,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             previewModel.hasSourceClip = source.hasSourceClip;
             previewModel.sourceClipName = source.sourceClipName;
             previewModel.sourceFrameRate = source.sourceFrameRate;
+            previewModel.sourceStartTime = source.sourceStartTime;
+            previewModel.sourceEndTime = source.sourceEndTime;
             previewModel.hasIntermediateKeys = source.hasIntermediateKeys;
             previewModel.entries = source.entries
                 .Select(CloneEntryForPartialImportPreview)
@@ -1281,6 +1333,31 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             public int RequestVersion { get; }
             public IReadOnlyList<PartialImportValue> Values { get; }
+            public ExpressionEditModel PreviewModel { get; private set; }
+            public GameObject PreviewAvatarRootObject { get; private set; }
+            public bool IsPrepared => PreviewModel != null && PreviewAvatarRootObject != null;
+
+            public void SetPreparedObjects(ExpressionEditModel previewModel, GameObject previewAvatarRootObject)
+            {
+                DisposePreparedObjects();
+                PreviewModel = previewModel;
+                PreviewAvatarRootObject = previewAvatarRootObject;
+            }
+
+            public void DisposePreparedObjects()
+            {
+                if (PreviewModel != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(PreviewModel);
+                    PreviewModel = null;
+                }
+
+                if (PreviewAvatarRootObject != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(PreviewAvatarRootObject);
+                    PreviewAvatarRootObject = null;
+                }
+            }
         }
 
         private enum PendingThumbnailCaptureKind
@@ -1623,6 +1700,35 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             _outputDecisionsDirty = true;
             EditorApplication.QueuePlayerLoopUpdate();
+        }
+
+        private void RequestPartialImportViewRefresh()
+        {
+            if (_blendShapeListView != null && _blendShapeListView.IsGroupedUndoActive)
+            {
+                _partialImportRefreshDirty = true;
+                EditorApplication.QueuePlayerLoopUpdate();
+                return;
+            }
+
+            _partialImportRefreshDirty = false;
+            _partialImportView?.Refresh();
+        }
+
+        private void FlushPartialImportViewRefreshIfReady()
+        {
+            if (!_partialImportRefreshDirty)
+            {
+                return;
+            }
+
+            if (_blendShapeListView != null && _blendShapeListView.IsGroupedUndoActive)
+            {
+                return;
+            }
+
+            _partialImportRefreshDirty = false;
+            _partialImportView?.Refresh();
         }
 
         private void FlushOutputDecisionUiRefreshIfReady()
@@ -1985,6 +2091,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void OnEditorUpdate()
         {
+            FlushPartialImportViewRefreshIfReady();
             FlushOutputDecisionUiRefreshIfReady();
 
             if (_pendingPartialImportPreviewCapture != null

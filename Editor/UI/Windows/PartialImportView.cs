@@ -339,18 +339,48 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void RefreshFilteredItems(string message = "", HelpBoxMessageType messageType = HelpBoxMessageType.Info)
         {
+            var refreshedItems = _items
+                .Where(MatchesFilter)
+                .ToList();
+            var visibleItemsChanged = HasFilteredItemsChanged(refreshedItems);
+
             _filteredItems.Clear();
-            foreach (var item in _items.Where(MatchesFilter))
+            foreach (var item in refreshedItems)
             {
                 _filteredItems.Add(item);
             }
 
             _listView.itemsSource = _filteredItems;
-            _listView.Rebuild();
+            if (visibleItemsChanged)
+            {
+                _listView.Rebuild();
+            }
+            else
+            {
+                _listView.RefreshItems();
+            }
 
             UpdateSummary();
             SetMessage(message, messageType);
             UpdateButtonStates();
+        }
+
+        private bool HasFilteredItemsChanged(IReadOnlyList<PartialImportItem> refreshedItems)
+        {
+            if (refreshedItems == null || refreshedItems.Count != _filteredItems.Count)
+            {
+                return true;
+            }
+
+            for (var i = 0; i < refreshedItems.Count; i++)
+            {
+                if (!ReferenceEquals(refreshedItems[i], _filteredItems[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private bool MatchesFilter(PartialImportItem item)
@@ -370,7 +400,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 }
             }
 
-            _listView.Rebuild();
+            _listView.RefreshItems();
             UpdateSummary();
             UpdateButtonStates();
             RequestSelectionPreview();
@@ -396,8 +426,22 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void UpdateSummary()
         {
-            var selectedCount = _items.Count(item => item.canApply && item.selected);
-            var importableCount = _items.Count(item => item.canApply);
+            var selectedCount = 0;
+            var importableCount = 0;
+            foreach (var item in _items)
+            {
+                if (!item.canApply)
+                {
+                    continue;
+                }
+
+                importableCount++;
+                if (item.selected)
+                {
+                    selectedCount++;
+                }
+            }
+
             var visibleCount = _filteredItems.Count;
             _summaryLabel.text = $"表示 {visibleCount} 件 / 取り込み可能 {importableCount} 件 / 選択 {selectedCount} 件";
             _summaryLabel.EnableInClassList("hidden", _model == null || _sourceClipField.value == null);
@@ -414,8 +458,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             var hasModel = _model != null;
             var hasClip = _sourceClipField.value is AnimationClip;
-            var selectedCount = _items.Count(item => item.canApply && item.selected);
-            var visibleImportableCount = _filteredItems.Count(item => item.canApply);
+            var selectedCount = 0;
+            foreach (var item in _items)
+            {
+                if (item.canApply && item.selected)
+                {
+                    selectedCount++;
+                }
+            }
+
+            var visibleImportableCount = 0;
+            foreach (var item in _filteredItems)
+            {
+                if (item.canApply)
+                {
+                    visibleImportableCount++;
+                }
+            }
 
             _sourceClipField.SetEnabled(hasModel);
             _searchField.SetEnabled(hasModel && hasClip && _items.Count > 0);

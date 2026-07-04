@@ -36,6 +36,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public bool hasSourceClip;
         public string sourceClipName = "";
         public float sourceFrameRate = 60f;
+        public float sourceStartTime;
+        public float sourceEndTime = 1f;
         public bool hasIntermediateKeys;
         public List<BlendShapeEntry> entries = new List<BlendShapeEntry>();
         public List<PreservedCurve> preservedCurves = new List<PreservedCurve>();

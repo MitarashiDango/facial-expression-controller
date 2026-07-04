@@ -54,6 +54,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private static List<string> GetEntryNames(ExpressionEditModel model)
         {
             var result = new List<string>();
+            var seenNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var entry in model.entries)
             {
                 if (entry == null || string.IsNullOrEmpty(entry.name))
@@ -61,7 +62,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     continue;
                 }
 
-                if (result.Contains(entry.name))
+                if (!seenNames.Add(entry.name))
                 {
                     continue;
                 }
