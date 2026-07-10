@@ -458,6 +458,12 @@
     width: 58px;
 }
 
+.blendshape-reset-button {
+    width: 48px;
+    flex-shrink: 0;
+    margin-left: 4px;
+}
+
 .blendshape-output-toggle {
     width: 122px;
     margin-left: 6px;
@@ -476,6 +482,24 @@
     flex-shrink: 0;
     color: rgb(190, 160, 80);
     -unity-text-align: middle-left;
+}
+
+.blendshape-list.narrow .blendshape-name {
+    width: 160px;
+    min-width: 80px;
+    max-width: 160px;
+}
+
+.blendshape-list.narrow .blendshape-slider {
+    min-width: 80px;
+}
+
+.blendshape-list.narrow .blendshape-output-status {
+    display: none;
+}
+
+.blendshape-list.narrow .blendshape-reason {
+    display: none;
 }
 
 .empty-label {

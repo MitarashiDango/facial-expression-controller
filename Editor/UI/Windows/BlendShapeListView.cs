@@ -10,6 +10,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
     public sealed class BlendShapeListView
     {
         private const float ChangedTolerance = 0.0001f;
+        private const float NarrowLayoutWidth = 720f;
         private readonly ExpressionEditModel _model;
         private readonly ListView _listView;
         private readonly Label _emptyLabel;
@@ -205,9 +206,15 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 var row = (BlendShapeRow)element;
                 row.Unbind();
             };
+            listView.RegisterCallback<GeometryChangedEvent>(evt => UpdateResponsiveLayout(evt.newRect.width));
 
             listView.AddToClassList("blendshape-list");
             return listView;
+        }
+
+        private void UpdateResponsiveLayout(float width)
+        {
+            _listView.EnableInClassList("narrow", width > 0f && width < NarrowLayoutWidth);
         }
 
         private bool MatchesFilter(BlendShapeEntry entry)
@@ -258,10 +265,16 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private static bool IsChanged(BlendShapeEntry entry)
         {
-            return Mathf.Abs(entry.value - entry.initialValue) > ChangedTolerance
-                || Mathf.Abs(entry.endValue - entry.initialValue) > ChangedTolerance
+            return IsValueChanged(entry)
                 || entry.systemExclusionUnlocked
                 || entry.userExcluded;
+        }
+
+        private static bool IsValueChanged(BlendShapeEntry entry)
+        {
+            return entry != null
+                && (Mathf.Abs(entry.value - entry.initialValue) > ChangedTolerance
+                    || Mathf.Abs(entry.endValue - entry.initialValue) > ChangedTolerance);
         }
 
         private void BeginGroupedUndo()
@@ -288,14 +301,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _activeUndoGroup = -1;
         }
 
-        private void RecordSingleUndo()
+        private void RecordSingleUndo(string undoName = "表情ブレンドシェイプを編集")
         {
             if (_model == null || _activeUndoGroup >= 0)
             {
                 return;
             }
 
-            Undo.RecordObject(_model, "表情ブレンドシェイプを編集");
+            Undo.RecordObject(_model, undoName);
         }
 
         private void SetValue(BlendShapeEntry entry, float value)
@@ -314,6 +327,21 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             SetDisplayValue(entry, clampedValue);
 
+            EditorUtility.SetDirty(_model);
+            PreviewValueChanged?.Invoke(entry);
+            Changed?.Invoke();
+        }
+
+        private void ResetEntryValues(BlendShapeEntry entry)
+        {
+            if (_model == null || !CanEditValue(entry) || !IsValueChanged(entry))
+            {
+                return;
+            }
+
+            RecordSingleUndo("表情ブレンドシェイプをリセット");
+            entry.value = entry.initialValue;
+            entry.endValue = entry.initialValue;
             EditorUtility.SetDirty(_model);
             PreviewValueChanged?.Invoke(entry);
             Changed?.Invoke();
@@ -425,6 +453,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             private readonly Label _nameLabel;
             private readonly Slider _slider;
             private readonly FloatField _valueField;
+            private readonly Button _resetButton;
             private readonly Toggle _outputToggle;
             private readonly Label _outputStatusLabel;
             private readonly Label _reasonLabel;
@@ -454,6 +483,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _valueField.RegisterValueChangedCallback(OnValueChanged);
                 Add(_valueField);
 
+                _resetButton = new Button(OnResetClicked)
+                {
+                    text = "戻す",
+                    tooltip = "このブレンドシェイプの始点・終点を初期値に戻します。",
+                };
+                _resetButton.AddToClassList("blendshape-reset-button");
+                Add(_resetButton);
+
                 _outputToggle = new Toggle();
                 _outputToggle.text = "編集・出力対象";
                 _outputToggle.tooltip = "編集・出力対象にするかどうかを切り替える";
@@ -480,7 +517,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 var canEditValue = CanEditValue(entry);
                 var displayValue = _owner.GetDisplayValue(entry);
                 _nameLabel.text = entry.name;
-                _nameLabel.tooltip = entry.name;
                 _slider.SetValueWithoutNotify(displayValue);
                 _valueField.SetValueWithoutNotify(displayValue);
                 _outputToggle.SetValueWithoutNotify(entry.ShouldOutput);
@@ -490,13 +526,19 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 var outputStatusText = _owner.GetOutputStatusText(entry, out var outputStatusTooltip);
                 _outputStatusLabel.text = outputStatusText;
                 _outputStatusLabel.tooltip = outputStatusTooltip;
-                _reasonLabel.text = GetSystemExclusionText(entry);
+                var reasonText = GetSystemExclusionText(entry);
+                _reasonLabel.text = reasonText;
+                _nameLabel.tooltip = GetNameTooltip(entry.name, outputStatusText, outputStatusTooltip, reasonText);
 
                 _slider.SetEnabled(canEditValue);
                 _valueField.SetEnabled(canEditValue);
+                _resetButton.SetEnabled(canEditValue && IsValueChanged(entry));
                 _outputToggle.SetEnabled(!entry.IsDuplicateName);
-                _outputStatusLabel.style.visibility = string.IsNullOrEmpty(outputStatusText) ? Visibility.Hidden : Visibility.Visible;
-                _reasonLabel.style.visibility = isSystemExcluded ? Visibility.Visible : Visibility.Hidden;
+                _outputStatusLabel.RemoveFromClassList("hidden");
+                _outputStatusLabel.style.visibility = string.IsNullOrEmpty(outputStatusText)
+                    ? Visibility.Hidden
+                    : Visibility.Visible;
+                _reasonLabel.RemoveFromClassList("hidden");
                 EnableInClassList("system-excluded", isSystemLocked);
                 EnableInClassList("system-unlocked", isSystemExcluded && !isSystemLocked);
                 EnableInClassList("user-excluded", entry.userExcluded);
@@ -505,6 +547,28 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 EnableInClassList("output-skipped", _owner._outputMode != BlendShapeOutputMode.AllTargets && !_owner.IsOutputScheduled(entry));
 
                 _ignoreChange = false;
+            }
+
+            private static string GetNameTooltip(
+                string name,
+                string outputStatusText,
+                string outputStatusTooltip,
+                string reasonText)
+            {
+                var details = new List<string> { name };
+                if (!string.IsNullOrEmpty(outputStatusText))
+                {
+                    details.Add(string.IsNullOrEmpty(outputStatusTooltip)
+                        ? outputStatusText
+                        : $"{outputStatusText}: {outputStatusTooltip}");
+                }
+
+                if (!string.IsNullOrEmpty(reasonText))
+                {
+                    details.Add($"除外理由: {reasonText}");
+                }
+
+                return string.Join("\n", details);
             }
 
             public void Unbind()
@@ -530,6 +594,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 try
                 {
                     _valueField.SetValueWithoutNotify(_owner.GetDisplayValue(entry));
+                    _resetButton.SetEnabled(CanEditValue(entry) && IsValueChanged(entry));
                     EnableInClassList("changed", IsChanged(entry));
                 }
                 finally
@@ -558,6 +623,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     var displayValue = _owner.GetDisplayValue(entry);
                     _slider.SetValueWithoutNotify(displayValue);
                     _valueField.SetValueWithoutNotify(displayValue);
+                    _resetButton.SetEnabled(CanEditValue(entry) && IsValueChanged(entry));
                     EnableInClassList("changed", IsChanged(entry));
                 }
                 finally
@@ -575,6 +641,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
                 var entry = _entry;
                 _owner.SetEditableTarget(entry, evt.newValue);
+                if (_entry != entry)
+                {
+                    return;
+                }
+
+                Bind(entry);
+            }
+
+            private void OnResetClicked()
+            {
+                if (_entry == null)
+                {
+                    return;
+                }
+
+                var entry = _entry;
+                _owner.ResetEntryValues(entry);
                 if (_entry != entry)
                 {
                     return;

@@ -228,6 +228,229 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             Assert.That(entry.userExcluded, Is.True);
         }
 
+        [Test]
+        public void BlendShapeListView_ResetEntryValues_ResetsOnlyTargetAndPreservesOutputSettings()
+        {
+            var model = CreateModel(new[] { "Smile", "Blink" }, new[] { 15f, 25f });
+            model.frameMode = ExpressionFrameMode.WeightBlend;
+            var smile = GetEntry(model, "Smile");
+            smile.value = 80f;
+            smile.endValue = 90f;
+            smile.systemExclusion = BlendShapeSystemExclusionReason.Mmd;
+            smile.systemExclusionUnlocked = true;
+            var blink = GetEntry(model, "Blink");
+            blink.value = 60f;
+            blink.endValue = 70f;
+
+            var listView = new BlendShapeListView(model, new VisualElement(), new Label());
+            var row = CreateBoundBlendShapeRow(listView, smile);
+            var changedCount = 0;
+            BlendShapeEntry previewEntry = null;
+            listView.Changed += () => changedCount++;
+            listView.PreviewValueChanged += entry => previewEntry = entry;
+
+            InvokeBlendShapeRowMethod(row, "OnResetClicked");
+
+            Assert.That(smile.value, Is.EqualTo(15f).Within(0.0001f));
+            Assert.That(smile.endValue, Is.EqualTo(15f).Within(0.0001f));
+            Assert.That(smile.systemExclusionUnlocked, Is.True);
+            Assert.That(smile.userExcluded, Is.False);
+            Assert.That(blink.value, Is.EqualTo(60f).Within(0.0001f));
+            Assert.That(blink.endValue, Is.EqualTo(70f).Within(0.0001f));
+            Assert.That(changedCount, Is.EqualTo(1));
+            Assert.That(previewEntry, Is.SameAs(smile));
+        }
+
+        [Test]
+        public void BlendShapeListView_ResetEntryValues_DoesNotThrowWhenChangedEventUnbindsRow()
+        {
+            var model = CreateModel(new[] { "Smile" }, new[] { 10f });
+            model.frameMode = ExpressionFrameMode.WeightBlend;
+            var entry = model.entries[0];
+            entry.value = 40f;
+            entry.endValue = 80f;
+            var listView = new BlendShapeListView(model, new VisualElement(), new Label());
+            var row = CreateBoundBlendShapeRow(listView, entry);
+
+            listView.Changed += () => InvokeBlendShapeRowMethod(row, "Unbind");
+
+            InvokeBlendShapeRowMethod(row, "OnResetClicked");
+
+            Assert.That(entry.value, Is.EqualTo(10f).Within(0.0001f));
+            Assert.That(entry.endValue, Is.EqualTo(10f).Within(0.0001f));
+        }
+
+        [Test]
+        public void BlendShapeListView_ResetButton_UsesValueChangeAndEditableState()
+        {
+            var model = CreateModel(new[] { "Smile" }, new[] { 0f });
+            var entry = model.entries[0];
+            var listView = new BlendShapeListView(model, new VisualElement(), new Label());
+            var row = CreateBoundBlendShapeRow(listView, entry);
+            var resetButton = GetBlendShapeRowField<Button>(row, "_resetButton");
+
+            Assert.That(resetButton.enabledSelf, Is.False);
+
+            InvokeBlendShapeRowFloatHandler(row, "OnSliderChanged", 25f);
+
+            Assert.That(resetButton.enabledSelf, Is.True);
+
+            InvokeBlendShapeRowFloatHandler(row, "OnSliderChanged", entry.initialValue);
+
+            Assert.That(resetButton.enabledSelf, Is.False);
+
+            entry.userExcluded = true;
+            InvokeBlendShapeRowMethod(row, "Bind", entry);
+
+            Assert.That(resetButton.enabledSelf, Is.False);
+            Assert.That(((VisualElement)row).ClassListContains("changed"), Is.True);
+
+            entry.userExcluded = false;
+            entry.systemExclusion = BlendShapeSystemExclusionReason.Mmd;
+            entry.value = 25f;
+            InvokeBlendShapeRowMethod(row, "Bind", entry);
+
+            Assert.That(resetButton.enabledSelf, Is.False);
+        }
+
+        [Test]
+        public void BlendShapeListView_ResetEntryValues_DoesNothingForNonEditableEntry()
+        {
+            var model = CreateModel(new[] { "Smile" }, new[] { 0f });
+            var entry = model.entries[0];
+            entry.value = 40f;
+            entry.endValue = 80f;
+            entry.userExcluded = true;
+            var listView = new BlendShapeListView(model, new VisualElement(), new Label());
+            var row = CreateBoundBlendShapeRow(listView, entry);
+            var changedCount = 0;
+            var previewCount = 0;
+            listView.Changed += () => changedCount++;
+            listView.PreviewValueChanged += _ => previewCount++;
+
+            InvokeBlendShapeRowMethod(row, "OnResetClicked");
+
+            Assert.That(entry.value, Is.EqualTo(40f).Within(0.0001f));
+            Assert.That(entry.endValue, Is.EqualTo(80f).Within(0.0001f));
+            Assert.That(changedCount, Is.Zero);
+            Assert.That(previewCount, Is.Zero);
+        }
+
+        [Test]
+        public void BlendShapeListView_ResetEntryValues_DoesNothingWhenValueIsUnchanged()
+        {
+            var model = CreateModel(new[] { "Smile" }, new[] { 20f });
+            var entry = model.entries[0];
+            var listView = new BlendShapeListView(model, new VisualElement(), new Label());
+            var row = CreateBoundBlendShapeRow(listView, entry);
+            var changedCount = 0;
+            var previewCount = 0;
+            listView.Changed += () => changedCount++;
+            listView.PreviewValueChanged += _ => previewCount++;
+
+            InvokeBlendShapeRowMethod(row, "OnResetClicked");
+
+            Assert.That(entry.value, Is.EqualTo(20f).Within(0.0001f));
+            Assert.That(entry.endValue, Is.EqualTo(20f).Within(0.0001f));
+            Assert.That(changedCount, Is.Zero);
+            Assert.That(previewCount, Is.Zero);
+        }
+
+        [Test]
+        public void BlendShapeListView_ResetEntryValues_SingleFrameSupportsUndoRedo()
+        {
+            ExpressionEditModel model = null;
+            try
+            {
+                model = CreateModel(new[] { "Smile" }, new[] { 20f });
+                model.frameMode = ExpressionFrameMode.SingleFrame;
+                var entry = model.entries[0];
+                entry.value = 70f;
+                entry.endValue = 70f;
+                var listView = new BlendShapeListView(model, new VisualElement(), new Label());
+                var row = CreateBoundBlendShapeRow(listView, entry);
+
+                InvokeBlendShapeRowMethod(row, "OnResetClicked");
+                Undo.FlushUndoRecordObjects();
+
+                Assert.That(entry.value, Is.EqualTo(20f).Within(0.0001f));
+                Assert.That(entry.endValue, Is.EqualTo(20f).Within(0.0001f));
+
+                Undo.PerformUndo();
+
+                Assert.That(GetEntry(model, "Smile").value, Is.EqualTo(70f).Within(0.0001f));
+                Assert.That(GetEntry(model, "Smile").endValue, Is.EqualTo(70f).Within(0.0001f));
+
+                Undo.PerformRedo();
+
+                Assert.That(GetEntry(model, "Smile").value, Is.EqualTo(20f).Within(0.0001f));
+                Assert.That(GetEntry(model, "Smile").endValue, Is.EqualTo(20f).Within(0.0001f));
+            }
+            finally
+            {
+                if (model != null)
+                {
+                    Undo.ClearUndo(model);
+                }
+            }
+        }
+
+        [Test]
+        public void BlendShapeListView_ResetEntryValues_DoesNothingForSystemLockedEntry()
+        {
+            var model = CreateModel(new[] { "Smile" }, new[] { 0f });
+            var entry = model.entries[0];
+            entry.value = 40f;
+            entry.endValue = 80f;
+            entry.systemExclusion = BlendShapeSystemExclusionReason.Mmd;
+            entry.systemExclusionUnlocked = false;
+            var listView = new BlendShapeListView(model, new VisualElement(), new Label());
+            var row = CreateBoundBlendShapeRow(listView, entry);
+            var changedCount = 0;
+            var previewCount = 0;
+            listView.Changed += () => changedCount++;
+            listView.PreviewValueChanged += _ => previewCount++;
+
+            InvokeBlendShapeRowMethod(row, "OnResetClicked");
+
+            Assert.That(entry.value, Is.EqualTo(40f).Within(0.0001f));
+            Assert.That(entry.endValue, Is.EqualTo(80f).Within(0.0001f));
+            Assert.That(changedCount, Is.Zero);
+            Assert.That(previewCount, Is.Zero);
+        }
+
+        [Test]
+        public void BlendShapeListView_ResponsiveLayout_SetsNarrowClassAndKeepsOptionalDetailsInTooltip()
+        {
+            var model = CreateModel(new[] { "Smile" }, new[] { 0f });
+            var entry = model.entries[0];
+            var listView = new BlendShapeListView(model, new VisualElement(), new Label());
+            var uiListView = GetBlendShapeListViewField<ListView>(listView, "_listView");
+            var row = CreateBoundBlendShapeRow(listView, entry);
+            var outputStatusLabel = GetBlendShapeRowField<Label>(row, "_outputStatusLabel");
+            var reasonLabel = GetBlendShapeRowField<Label>(row, "_reasonLabel");
+            var nameLabel = GetBlendShapeRowField<Label>(row, "_nameLabel");
+
+            Assert.That(outputStatusLabel.ClassListContains("hidden"), Is.False);
+            Assert.That(outputStatusLabel.style.visibility.value, Is.EqualTo(Visibility.Hidden));
+            Assert.That(reasonLabel.ClassListContains("hidden"), Is.False);
+            Assert.That(reasonLabel.text, Is.Empty);
+
+            entry.systemExclusion = BlendShapeSystemExclusionReason.Mmd;
+            InvokeBlendShapeRowMethod(row, "Bind", entry);
+
+            Assert.That(reasonLabel.ClassListContains("hidden"), Is.False);
+            Assert.That(nameLabel.tooltip, Does.Contain("除外理由: MMD"));
+
+            InvokeBlendShapeListViewMethod(listView, "UpdateResponsiveLayout", 559f);
+
+            Assert.That(uiListView.ClassListContains("narrow"), Is.True);
+
+            InvokeBlendShapeListViewMethod(listView, "UpdateResponsiveLayout", 800f);
+
+            Assert.That(uiListView.ClassListContains("narrow"), Is.False);
+        }
+
         private ExpressionEditModel CreateModel(string[] blendShapeNames, float[] weights)
         {
             var avatarRoot = new GameObject("Avatar");
@@ -328,6 +551,43 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             var rowType = typeof(BlendShapeListView).GetNestedType("BlendShapeRow", BindingFlags.NonPublic);
             Assert.That(rowType, Is.Not.Null);
             return rowType;
+        }
+
+        private static T GetBlendShapeRowField<T>(object row, string fieldName)
+        {
+            var field = row.GetType().GetField(
+                fieldName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null);
+            return (T)field.GetValue(row);
+        }
+
+        private static T GetBlendShapeListViewField<T>(BlendShapeListView listView, string fieldName)
+        {
+            var field = typeof(BlendShapeListView).GetField(
+                fieldName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null);
+            return (T)field.GetValue(listView);
+        }
+
+        private static void InvokeBlendShapeListViewMethod(
+            BlendShapeListView listView,
+            string methodName,
+            params object[] args)
+        {
+            var method = typeof(BlendShapeListView).GetMethod(
+                methodName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null);
+            try
+            {
+                method.Invoke(listView, args);
+            }
+            catch (TargetInvocationException ex) when (ex.InnerException != null)
+            {
+                throw ex.InnerException;
+            }
         }
 
         private static void InvokeBlendShapeRowFloatHandler(object row, string methodName, float newValue)
