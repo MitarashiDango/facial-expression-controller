@@ -7,6 +7,25 @@ using UnityEngine.UIElements;
 
 namespace MitarashiDango.FacialExpressionController.Editor
 {
+    public enum BlendShapeBulkEditableTargetAction
+    {
+        AllEditable,
+        AllExcluded,
+        RestoreEditingStart,
+    }
+
+    public struct BlendShapeBulkEditableTargetResult
+    {
+        public BlendShapeBulkEditableTargetResult(int changedCount, int unavailableCount)
+        {
+            ChangedCount = changedCount;
+            UnavailableCount = unavailableCount;
+        }
+
+        public int ChangedCount { get; }
+        public int UnavailableCount { get; }
+    }
+
     public sealed class BlendShapeListView
     {
         private const float ChangedTolerance = 0.0001f;
@@ -184,6 +203,72 @@ namespace MitarashiDango.FacialExpressionController.Editor
             Undo.CollapseUndoOperations(group);
             Refresh();
             Changed?.Invoke();
+        }
+
+        public BlendShapeBulkEditableTargetResult ApplyBulkEditableTargetAction(
+            BlendShapeBulkEditableTargetAction action)
+        {
+            if (_model == null || _model.entries == null)
+            {
+                return new BlendShapeBulkEditableTargetResult(0, 0);
+            }
+
+            EndGroupedUndo();
+
+            var stateAction = GetEditableTargetStateAction(action);
+            var changes = new List<EditableTargetChange>();
+            var unavailableCount = 0;
+            foreach (var entry in _model.entries)
+            {
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                if (action == BlendShapeBulkEditableTargetAction.AllEditable && entry.IsDuplicateName)
+                {
+                    unavailableCount++;
+                    continue;
+                }
+
+                var nextState = GetEditableTargetState(entry, stateAction);
+                if (entry.systemExclusionUnlocked == nextState.SystemExclusionUnlocked
+                    && entry.userExcluded == nextState.UserExcluded)
+                {
+                    continue;
+                }
+
+                changes.Add(new EditableTargetChange(entry, nextState));
+            }
+
+            if (changes.Count == 0)
+            {
+                return new BlendShapeBulkEditableTargetResult(0, unavailableCount);
+            }
+
+            var undoName = GetBulkEditableTargetUndoName(action);
+            Undo.IncrementCurrentGroup();
+            var group = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName(undoName);
+            Undo.RecordObject(_model, undoName);
+            try
+            {
+                foreach (var change in changes)
+                {
+                    change.Apply();
+                }
+            }
+            finally
+            {
+                Undo.CollapseUndoOperations(group);
+                Undo.IncrementCurrentGroup();
+            }
+
+            EditorUtility.SetDirty(_model);
+            Refresh();
+            PreviewResetRequested?.Invoke();
+            Changed?.Invoke();
+            return new BlendShapeBulkEditableTargetResult(changes.Count, unavailableCount);
         }
 
         private ListView CreateListView()
@@ -669,25 +754,110 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void SetEditableTarget(BlendShapeEntry entry, bool editableTarget)
         {
-            if (entry == null)
+            if (entry == null || entry.IsDuplicateName)
             {
                 return;
             }
 
-            var nextSystemExclusionUnlocked = entry.IsSystemExcluded && editableTarget;
-            var nextUserExcluded = !entry.IsSystemExcluded && !editableTarget;
-            if (entry.systemExclusionUnlocked == nextSystemExclusionUnlocked
-                && entry.userExcluded == nextUserExcluded)
+            var nextState = GetEditableTargetState(
+                entry,
+                editableTarget ? EditableTargetStateAction.Editable : EditableTargetStateAction.Excluded);
+            if (entry.systemExclusionUnlocked == nextState.SystemExclusionUnlocked
+                && entry.userExcluded == nextState.UserExcluded)
             {
                 return;
             }
 
             RecordSingleUndo();
-            entry.systemExclusionUnlocked = nextSystemExclusionUnlocked;
-            entry.userExcluded = nextUserExcluded;
+            entry.systemExclusionUnlocked = nextState.SystemExclusionUnlocked;
+            entry.userExcluded = nextState.UserExcluded;
             EditorUtility.SetDirty(_model);
             PreviewResetRequested?.Invoke();
             Changed?.Invoke();
+        }
+
+        private static EditableTargetStateAction GetEditableTargetStateAction(
+            BlendShapeBulkEditableTargetAction action)
+        {
+            switch (action)
+            {
+                case BlendShapeBulkEditableTargetAction.AllEditable:
+                    return EditableTargetStateAction.Editable;
+                case BlendShapeBulkEditableTargetAction.AllExcluded:
+                    return EditableTargetStateAction.Excluded;
+                case BlendShapeBulkEditableTargetAction.RestoreEditingStart:
+                    return EditableTargetStateAction.RestoreEditingStart;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(action), action, null);
+            }
+        }
+
+        private static EditableTargetState GetEditableTargetState(
+            BlendShapeEntry entry,
+            EditableTargetStateAction action)
+        {
+            if (entry.IsSystemExcluded)
+            {
+                return action == EditableTargetStateAction.Editable
+                    ? new EditableTargetState(true, false)
+                    : new EditableTargetState(false, false);
+            }
+
+            return action == EditableTargetStateAction.Excluded
+                ? new EditableTargetState(false, true)
+                : new EditableTargetState(false, false);
+        }
+
+        private static string GetBulkEditableTargetUndoName(BlendShapeBulkEditableTargetAction action)
+        {
+            switch (action)
+            {
+                case BlendShapeBulkEditableTargetAction.AllEditable:
+                    return "ブレンドシェイプをすべて編集・出力対象に変更";
+                case BlendShapeBulkEditableTargetAction.AllExcluded:
+                    return "ブレンドシェイプをすべて編集・出力対象外に変更";
+                case BlendShapeBulkEditableTargetAction.RestoreEditingStart:
+                    return "ブレンドシェイプの対象設定を編集開始時点に戻す";
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(action), action, null);
+            }
+        }
+
+        private enum EditableTargetStateAction
+        {
+            Editable,
+            Excluded,
+            RestoreEditingStart,
+        }
+
+        private struct EditableTargetState
+        {
+            public EditableTargetState(bool systemExclusionUnlocked, bool userExcluded)
+            {
+                SystemExclusionUnlocked = systemExclusionUnlocked;
+                UserExcluded = userExcluded;
+            }
+
+            public bool SystemExclusionUnlocked { get; }
+            public bool UserExcluded { get; }
+        }
+
+        private struct EditableTargetChange
+        {
+            private readonly BlendShapeEntry _entry;
+            private readonly EditableTargetState _state;
+
+            public EditableTargetChange(BlendShapeEntry entry, EditableTargetState state)
+            {
+                _entry = entry;
+                _state = state;
+            }
+
+            public void Apply()
+            {
+                _entry.systemExclusionUnlocked = _state.SystemExclusionUnlocked;
+                _entry.userExcluded = _state.UserExcluded;
+            }
         }
     }
 }
