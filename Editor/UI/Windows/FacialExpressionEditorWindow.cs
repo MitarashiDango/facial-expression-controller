@@ -1650,13 +1650,28 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return false;
             }
 
-            var clip = ExpressionClipIO.ToClip(
-                _model,
-                _currentClip != null ? _currentClip.name : _model.sourceClipName,
-                outputSettings: outputSettings);
-            ExpressionClipIO.SaveClipToAsset(clip, _currentAssetPath);
-            DestroyTemporaryClip(clip);
-            _currentClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(_currentAssetPath);
+            AnimationClip clip = null;
+            AnimationClip savedClip;
+            try
+            {
+                clip = ExpressionClipIO.ToClip(
+                    _model,
+                    _currentClip != null ? _currentClip.name : _model.sourceClipName,
+                    outputSettings: outputSettings);
+                savedClip = ExpressionClipIO.SaveClipToAsset(clip, _currentAssetPath);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                ShowMessage("保存に失敗しました。Console を確認してください。", HelpBoxMessageType.Error);
+                return false;
+            }
+            finally
+            {
+                DestroyTemporaryClip(clip);
+            }
+
+            _currentClip = savedClip;
             SetUnsavedChanges(false);
             ShowMessage("保存しました。", HelpBoxMessageType.Info);
             return true;
@@ -1692,11 +1707,26 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return false;
             }
 
-            var clip = ExpressionClipIO.ToClip(_model, defaultName, outputSettings: outputSettings);
-            ExpressionClipIO.SaveClipToAsset(clip, filePath);
-            DestroyTemporaryClip(clip);
+            AnimationClip clip = null;
+            AnimationClip savedClip;
+            try
+            {
+                clip = ExpressionClipIO.ToClip(_model, defaultName, outputSettings: outputSettings);
+                savedClip = ExpressionClipIO.SaveClipToAsset(clip, filePath);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                ShowMessage("保存に失敗しました。Console を確認してください。", HelpBoxMessageType.Error);
+                return false;
+            }
+            finally
+            {
+                DestroyTemporaryClip(clip);
+            }
+
             _currentAssetPath = filePath;
-            _currentClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(filePath);
+            _currentClip = savedClip;
             _clipField.SetValueWithoutNotify(_currentClip);
             SetUnsavedChanges(false);
             ShowMessage("保存しました。", HelpBoxMessageType.Info);

@@ -43,13 +43,45 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var filePath = EditorUtility.SaveFilePanelInProject("名前を付けて保存", $"AnimationClip_{go.name}", "anim", "アニメーションクリップの保存先を選択してください", "Assets");
-            if (filePath == "")
+            if (string.IsNullOrEmpty(filePath))
             {
                 EditorUtility.DisplayDialog("情報", "キャンセルされました", "OK");
+                DestroyTemporaryClip(ac);
                 return;
             }
 
-            ExpressionClipIO.SaveClipToAsset(ac, filePath);
+            if (!TrySaveGeneratedClip(ac, filePath, out var exception))
+            {
+                Debug.LogException(exception);
+                EditorUtility.DisplayDialog("エラー", "アニメーションクリップを保存できませんでした。Console を確認してください。", "OK");
+            }
+        }
+
+        private static bool TrySaveGeneratedClip(AnimationClip clip, string filePath, out System.Exception exception)
+        {
+            try
+            {
+                ExpressionClipIO.SaveClipToAsset(clip, filePath);
+                exception = null;
+                return true;
+            }
+            catch (System.Exception caughtException)
+            {
+                exception = caughtException;
+                return false;
+            }
+            finally
+            {
+                DestroyTemporaryClip(clip);
+            }
+        }
+
+        private static void DestroyTemporaryClip(AnimationClip clip)
+        {
+            if (clip != null && !EditorUtility.IsPersistent(clip))
+            {
+                Object.DestroyImmediate(clip);
+            }
         }
 
         public static IReadOnlyList<string> MmdBlendShapes => BlendShapeCatalog.MmdBlendShapes;
