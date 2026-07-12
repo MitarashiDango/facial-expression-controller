@@ -76,11 +76,25 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private readonly Dictionary<int, float> _weightsByIndex = new Dictionary<int, float>();
         private readonly List<BlendShapeInfluenceWeightedVertex> _weightedVertices = new List<BlendShapeInfluenceWeightedVertex>();
         private readonly List<BlendShapeInfluenceResult> _results = new List<BlendShapeInfluenceResult>();
-        private Mesh _bakedMesh;
+        private Mesh _sampleMesh;
         private Vector3[] _worldVertices = Array.Empty<Vector3>();
         private Vector3[] _deltaVertices = Array.Empty<Vector3>();
         private Vector3[] _deltaNormals = Array.Empty<Vector3>();
         private Vector3[] _deltaTangents = Array.Empty<Vector3>();
+        private Vector3[] _deformedVertices = Array.Empty<Vector3>();
+        private Vector3[] _blendShapeDelta0 = Array.Empty<Vector3>();
+        private Vector3[] _blendShapeDelta1 = Array.Empty<Vector3>();
+        private Vector3[] _worldSkinnedVertices = Array.Empty<Vector3>();
+        private Mesh _cachedSkinningMesh;
+        private byte[] _bonesPerVertex = Array.Empty<byte>();
+        private int[] _boneWeightStarts = Array.Empty<int>();
+        private BoneWeight1[] _allBoneWeights = Array.Empty<BoneWeight1>();
+        private Matrix4x4[] _bindPoses = Array.Empty<Matrix4x4>();
+        private Transform[] _bones = Array.Empty<Transform>();
+        private Matrix4x4[] _skinningMatrices = Array.Empty<Matrix4x4>();
+        private int _maxBonesPerVertex;
+        private bool _hasCachedMeshSkinningData;
+        private bool _hasValidSkinningData;
 
         internal Dictionary<int, float> WeightsByIndex => _weightsByIndex;
         internal List<BlendShapeInfluenceWeightedVertex> WeightedVertices => _weightedVertices;
@@ -88,33 +102,33 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         public void Dispose()
         {
-            if (_bakedMesh == null)
+            if (_sampleMesh == null)
             {
                 return;
             }
 
-            UnityEngine.Object.DestroyImmediate(_bakedMesh);
-            _bakedMesh = null;
+            UnityEngine.Object.DestroyImmediate(_sampleMesh);
+            _sampleMesh = null;
         }
 
-        internal Mesh GetBakedMesh(Mesh sourceMesh)
+        internal Mesh GetSampleMesh(Mesh sourceMesh)
         {
-            if (_bakedMesh == null)
+            if (_sampleMesh == null)
             {
-                _bakedMesh = new Mesh
+                _sampleMesh = new Mesh
                 {
                     hideFlags = HideFlags.HideAndDontSave,
                 };
             }
             else
             {
-                _bakedMesh.Clear();
+                _sampleMesh.Clear();
             }
 
-            _bakedMesh.name = sourceMesh != null
+            _sampleMesh.name = sourceMesh != null
                 ? $"{sourceMesh.name}_BlendShapeInfluenceProbe"
                 : "BlendShapeInfluenceProbe";
-            return _bakedMesh;
+            return _sampleMesh;
         }
 
         internal Vector3[] BuildWorldVertices(Mesh mesh, Matrix4x4 localToWorldMatrix, out int vertexCount)
@@ -158,6 +172,320 @@ namespace MitarashiDango.FacialExpressionController.Editor
             deltaTangents = _deltaTangents;
         }
 
+        internal bool PrepareSkinning(SkinnedMeshRenderer renderer, Mesh mesh)
+        {
+            _hasValidSkinningData = false;
+            if (renderer == null || mesh == null)
+            {
+                return false;
+            }
+
+            var meshChanged = _cachedSkinningMesh != mesh;
+            if (meshChanged)
+            {
+                CacheMeshSkinningData(mesh);
+            }
+
+            if (!_hasCachedMeshSkinningData)
+            {
+                return false;
+            }
+
+            // Unity 2022.3 には bones を非割当で取得する公開APIがない。
+            // 同じ renderer のまま配列参照や順序が変更される場合を取りこぼさないよう、毎回更新する。
+            _bones = renderer.bones;
+
+            if (_bones.Length < _bindPoses.Length)
+            {
+                return false;
+            }
+
+            if (_skinningMatrices.Length < _bindPoses.Length)
+            {
+                _skinningMatrices = new Matrix4x4[_bindPoses.Length];
+            }
+
+            for (var i = 0; i < _bindPoses.Length; i++)
+            {
+                if (_bones[i] == null)
+                {
+                    return false;
+                }
+
+                // Transform は呼び出し間で変化し得るため、current matrix は TryProbe ごとに必ず更新する。
+                _skinningMatrices[i] = _bones[i].localToWorldMatrix * _bindPoses[i];
+            }
+
+            _maxBonesPerVertex = ResolveMaxBonesPerVertex(renderer);
+            _hasValidSkinningData = true;
+            return true;
+        }
+
+        private void CacheMeshSkinningData(Mesh mesh)
+        {
+            _cachedSkinningMesh = mesh;
+            _hasCachedMeshSkinningData = false;
+
+            var bonesPerVertex = mesh.GetBonesPerVertex();
+            var allBoneWeights = mesh.GetAllBoneWeights();
+            if (bonesPerVertex.Length != mesh.vertexCount || allBoneWeights.Length == 0)
+            {
+                return;
+            }
+
+            if (_bonesPerVertex.Length != bonesPerVertex.Length)
+            {
+                _bonesPerVertex = new byte[bonesPerVertex.Length];
+            }
+
+            if (_boneWeightStarts.Length != bonesPerVertex.Length + 1)
+            {
+                _boneWeightStarts = new int[bonesPerVertex.Length + 1];
+            }
+
+            if (_allBoneWeights.Length != allBoneWeights.Length)
+            {
+                _allBoneWeights = new BoneWeight1[allBoneWeights.Length];
+            }
+
+            var boneWeightIndex = 0;
+            for (var vertexIndex = 0; vertexIndex < bonesPerVertex.Length; vertexIndex++)
+            {
+                _bonesPerVertex[vertexIndex] = bonesPerVertex[vertexIndex];
+                _boneWeightStarts[vertexIndex] = boneWeightIndex;
+                boneWeightIndex += bonesPerVertex[vertexIndex];
+            }
+
+            _boneWeightStarts[bonesPerVertex.Length] = boneWeightIndex;
+            if (boneWeightIndex != allBoneWeights.Length)
+            {
+                return;
+            }
+
+            for (var i = 0; i < allBoneWeights.Length; i++)
+            {
+                _allBoneWeights[i] = allBoneWeights[i];
+            }
+
+            _bindPoses = mesh.bindposes;
+            _hasCachedMeshSkinningData = _bindPoses.Length > 0;
+        }
+
+        private static int ResolveMaxBonesPerVertex(SkinnedMeshRenderer renderer)
+        {
+            switch (renderer.quality)
+            {
+                case SkinQuality.Bone1:
+                    return 1;
+                case SkinQuality.Bone2:
+                    return 2;
+                case SkinQuality.Bone4:
+                    return 4;
+                default:
+                    switch (QualitySettings.skinWeights)
+                    {
+                        case SkinWeights.OneBone:
+                            return 1;
+                        case SkinWeights.TwoBones:
+                            return 2;
+                        case SkinWeights.FourBones:
+                            return 4;
+                        case SkinWeights.Unlimited:
+                            return int.MaxValue;
+                        default:
+                            return 0;
+                    }
+            }
+        }
+
+        internal Vector3 TransformSkinnedDelta(int vertexIndex, Vector3 delta)
+        {
+            if (!_hasValidSkinningData || vertexIndex < 0 || vertexIndex >= _bonesPerVertex.Length)
+            {
+                return Vector3.zero;
+            }
+
+            var worldDelta = Vector3.zero;
+            var totalWeight = 0f;
+            var start = _boneWeightStarts[vertexIndex];
+            var count = Mathf.Min(_bonesPerVertex[vertexIndex], _maxBonesPerVertex);
+            for (var i = 0; i < count; i++)
+            {
+                var boneWeight = _allBoneWeights[start + i];
+                if (!IsValidBoneWeight(boneWeight))
+                {
+                    continue;
+                }
+
+                worldDelta += _skinningMatrices[boneWeight.boneIndex].MultiplyVector(delta) * boneWeight.weight;
+                totalWeight += boneWeight.weight;
+            }
+
+            return totalWeight > Mathf.Epsilon ? worldDelta / totalWeight : Vector3.zero;
+        }
+
+        internal Mesh BuildSkinnedSampleMesh(SkinnedMeshRenderer renderer, Mesh sourceMesh)
+        {
+            var vertexCount = sourceMesh.vertexCount;
+            EnsureExactVector3Array(ref _deformedVertices, vertexCount);
+            EnsureExactVector3Array(ref _blendShapeDelta0, vertexCount);
+            EnsureExactVector3Array(ref _blendShapeDelta1, vertexCount);
+            EnsureExactVector3Array(ref _worldSkinnedVertices, vertexCount);
+            EnsureExactVector3Array(ref _deltaNormals, vertexCount);
+            EnsureExactVector3Array(ref _deltaTangents, vertexCount);
+            _sourceVertices.Clear();
+            sourceMesh.GetVertices(_sourceVertices);
+            for (var i = 0; i < vertexCount; i++)
+            {
+                _deformedVertices[i] = _sourceVertices[i];
+            }
+
+            for (var blendShapeIndex = 0; blendShapeIndex < sourceMesh.blendShapeCount; blendShapeIndex++)
+            {
+                var weight = renderer.GetBlendShapeWeight(blendShapeIndex);
+                if (Mathf.Approximately(weight, 0f))
+                {
+                    continue;
+                }
+
+                ApplyBlendShape(sourceMesh, blendShapeIndex, weight, vertexCount);
+            }
+
+            for (var i = 0; i < vertexCount; i++)
+            {
+                _worldSkinnedVertices[i] = _hasValidSkinningData
+                    ? TransformSkinnedPoint(i, _deformedVertices[i])
+                    : renderer.localToWorldMatrix.MultiplyPoint3x4(_deformedVertices[i]);
+            }
+
+            var sampleMesh = GetSampleMesh(sourceMesh);
+            sampleMesh.vertices = _worldSkinnedVertices;
+            sampleMesh.SetTriangles(GetTriangles(sourceMesh), 0, true);
+            sampleMesh.RecalculateBounds();
+            return sampleMesh;
+        }
+
+        private void ApplyBlendShape(Mesh mesh, int blendShapeIndex, float weight, int vertexCount)
+        {
+            var frameCount = mesh.GetBlendShapeFrameCount(blendShapeIndex);
+            if (frameCount <= 0)
+            {
+                return;
+            }
+
+            if (frameCount == 1 || weight <= mesh.GetBlendShapeFrameWeight(blendShapeIndex, 0))
+            {
+                var frameWeight = mesh.GetBlendShapeFrameWeight(blendShapeIndex, 0);
+                mesh.GetBlendShapeFrameVertices(
+                    blendShapeIndex,
+                    0,
+                    _blendShapeDelta0,
+                    _deltaNormals,
+                    _deltaTangents);
+                AddScaledDelta(_blendShapeDelta0, SafeDivide(weight, frameWeight), vertexCount);
+                return;
+            }
+
+            for (var frameIndex = 1; frameIndex < frameCount; frameIndex++)
+            {
+                var upperWeight = mesh.GetBlendShapeFrameWeight(blendShapeIndex, frameIndex);
+                if (weight > upperWeight)
+                {
+                    continue;
+                }
+
+                var lowerWeight = mesh.GetBlendShapeFrameWeight(blendShapeIndex, frameIndex - 1);
+                mesh.GetBlendShapeFrameVertices(
+                    blendShapeIndex,
+                    frameIndex - 1,
+                    _blendShapeDelta0,
+                    _deltaNormals,
+                    _deltaTangents);
+                mesh.GetBlendShapeFrameVertices(
+                    blendShapeIndex,
+                    frameIndex,
+                    _blendShapeDelta1,
+                    _deltaNormals,
+                    _deltaTangents);
+                var interpolation = Mathf.InverseLerp(lowerWeight, upperWeight, weight);
+                for (var i = 0; i < vertexCount; i++)
+                {
+                    _deformedVertices[i] += Vector3.LerpUnclamped(
+                        _blendShapeDelta0[i],
+                        _blendShapeDelta1[i],
+                        interpolation);
+                }
+
+                return;
+            }
+
+            var lastFrameIndex = frameCount - 1;
+            var previousFrameIndex = lastFrameIndex - 1;
+            var previousFrameWeight = mesh.GetBlendShapeFrameWeight(blendShapeIndex, previousFrameIndex);
+            var lastFrameWeight = mesh.GetBlendShapeFrameWeight(blendShapeIndex, lastFrameIndex);
+            mesh.GetBlendShapeFrameVertices(
+                blendShapeIndex,
+                previousFrameIndex,
+                _blendShapeDelta0,
+                _deltaNormals,
+                _deltaTangents);
+            mesh.GetBlendShapeFrameVertices(
+                blendShapeIndex,
+                lastFrameIndex,
+                _blendShapeDelta1,
+                _deltaNormals,
+                _deltaTangents);
+            var extrapolation = SafeDivide(weight - previousFrameWeight, lastFrameWeight - previousFrameWeight);
+            for (var i = 0; i < vertexCount; i++)
+            {
+                _deformedVertices[i] += Vector3.LerpUnclamped(
+                    _blendShapeDelta0[i],
+                    _blendShapeDelta1[i],
+                    extrapolation);
+            }
+        }
+
+        private void AddScaledDelta(Vector3[] delta, float scale, int vertexCount)
+        {
+            for (var i = 0; i < vertexCount; i++)
+            {
+                _deformedVertices[i] += delta[i] * scale;
+            }
+        }
+
+        private Vector3 TransformSkinnedPoint(int vertexIndex, Vector3 point)
+        {
+            var worldPoint = Vector3.zero;
+            var totalWeight = 0f;
+            var start = _boneWeightStarts[vertexIndex];
+            var count = Mathf.Min(_bonesPerVertex[vertexIndex], _maxBonesPerVertex);
+            for (var i = 0; i < count; i++)
+            {
+                var boneWeight = _allBoneWeights[start + i];
+                if (!IsValidBoneWeight(boneWeight))
+                {
+                    continue;
+                }
+
+                worldPoint += _skinningMatrices[boneWeight.boneIndex].MultiplyPoint3x4(point) * boneWeight.weight;
+                totalWeight += boneWeight.weight;
+            }
+
+            return totalWeight > Mathf.Epsilon ? worldPoint / totalWeight : Vector3.zero;
+        }
+
+        private static float SafeDivide(float value, float divisor)
+        {
+            return Mathf.Abs(divisor) > Mathf.Epsilon ? value / divisor : 1f;
+        }
+
+        private bool IsValidBoneWeight(BoneWeight1 boneWeight)
+        {
+            return boneWeight.weight > 0f
+                && boneWeight.boneIndex >= 0
+                && boneWeight.boneIndex < _bindPoses.Length;
+        }
+
         private static void EnsureVector3Array(ref Vector3[] array, int requiredLength)
         {
             if (array.Length < requiredLength)
@@ -179,7 +507,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
     {
         private const float RaycastEpsilon = 1e-7f;
         private const float MinimumTriangleVertexWeight = 0.0001f;
-        private const float ScaleEpsilon = 1e-7f;
 
         public static bool TryProbe(
             SkinnedMeshRenderer renderer,
@@ -216,8 +543,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             try
             {
-                var bakedMesh = resolvedContext.GetBakedMesh(blendShapeMesh);
-                BakeSampleMesh(renderer, bakedMesh, out var sampleToWorldMatrix, out var deltaToWorldMatrix);
+                var hasSkinning = resolvedContext.PrepareSkinning(renderer, blendShapeMesh);
+                var bakedMesh = resolvedContext.BuildSkinnedSampleMesh(renderer, blendShapeMesh);
+                var sampleToWorldMatrix = Matrix4x4.identity;
                 if (bakedMesh.vertexCount != blendShapeMesh.vertexCount)
                 {
                     return false;
@@ -228,14 +556,15 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     return false;
                 }
 
-                results = CalculateInfluences(
+                results = CalculateSkinnedInfluences(
+                    renderer,
                     blendShapeMesh,
                     bakedMesh,
                     sampleToWorldMatrix,
-                    deltaToWorldMatrix,
                     hit,
                     options,
-                    resolvedContext);
+                    resolvedContext,
+                    hasSkinning);
                 return true;
             }
             finally
@@ -483,6 +812,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     maxDelta));
             }
 
+            SortAndLimitResults(results, resolvedOptions.maxResults);
+
+            return results.Count == 0 ? Array.Empty<BlendShapeInfluenceResult>() : results.ToArray();
+        }
+
+        private static void SortAndLimitResults(List<BlendShapeInfluenceResult> results, int maxResults)
+        {
             results.Sort((left, right) =>
             {
                 var scoreComparison = right.Score.CompareTo(left.Score);
@@ -490,37 +826,93 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     ? scoreComparison
                     : string.Compare(left.BlendShapeName, right.BlendShapeName, StringComparison.Ordinal);
             });
-            if (resolvedOptions.maxResults > 0 && results.Count > resolvedOptions.maxResults)
+            if (maxResults > 0 && results.Count > maxResults)
             {
-                results.RemoveRange(resolvedOptions.maxResults, results.Count - resolvedOptions.maxResults);
+                results.RemoveRange(maxResults, results.Count - maxResults);
+            }
+        }
+
+        private static IReadOnlyList<BlendShapeInfluenceResult> CalculateSkinnedInfluences(
+            SkinnedMeshRenderer renderer,
+            Mesh blendShapeMesh,
+            Mesh sampleMesh,
+            Matrix4x4 sampleToWorldMatrix,
+            BlendShapeInfluenceHit hit,
+            BlendShapeInfluenceProbeOptions options,
+            BlendShapeInfluenceProbeContext context,
+            bool hasSkinning)
+        {
+            if (!hasSkinning)
+            {
+                return CalculateInfluences(
+                    blendShapeMesh,
+                    sampleMesh,
+                    sampleToWorldMatrix,
+                    renderer.localToWorldMatrix,
+                    hit,
+                    options,
+                    context);
             }
 
+            var resolvedOptions = options ?? new BlendShapeInfluenceProbeOptions();
+            var weightedVertices = CollectWeightedVertices(
+                sampleMesh,
+                sampleToWorldMatrix,
+                hit,
+                Mathf.Max(0f, resolvedOptions.worldRadius),
+                context);
+            if (weightedVertices.Count == 0)
+            {
+                return Array.Empty<BlendShapeInfluenceResult>();
+            }
+
+            var vertexCount = blendShapeMesh.vertexCount;
+            context.GetDeltaArrays(vertexCount, out var deltaVertices, out var deltaNormals, out var deltaTangents);
+            var minimumDelta = Mathf.Max(0f, resolvedOptions.minimumDelta);
+            var results = context.Results;
+            results.Clear();
+
+            for (var blendShapeIndex = 0; blendShapeIndex < blendShapeMesh.blendShapeCount; blendShapeIndex++)
+            {
+                var frameCount = blendShapeMesh.GetBlendShapeFrameCount(blendShapeIndex);
+                if (frameCount <= 0)
+                {
+                    continue;
+                }
+
+                blendShapeMesh.GetBlendShapeFrameVertices(
+                    blendShapeIndex,
+                    frameCount - 1,
+                    deltaVertices,
+                    deltaNormals,
+                    deltaTangents);
+
+                var score = 0f;
+                var maxDelta = 0f;
+                for (var i = 0; i < weightedVertices.Count; i++)
+                {
+                    var weightedVertex = weightedVertices[i];
+                    var deltaMagnitude = context.TransformSkinnedDelta(
+                        weightedVertex.index,
+                        deltaVertices[weightedVertex.index]).magnitude;
+                    maxDelta = Mathf.Max(maxDelta, deltaMagnitude);
+                    score = Mathf.Max(score, deltaMagnitude * weightedVertex.weight);
+                }
+
+                if (score < minimumDelta)
+                {
+                    continue;
+                }
+
+                results.Add(new BlendShapeInfluenceResult(
+                    blendShapeIndex,
+                    blendShapeMesh.GetBlendShapeName(blendShapeIndex),
+                    score,
+                    maxDelta));
+            }
+
+            SortAndLimitResults(results, resolvedOptions.maxResults);
             return results.Count == 0 ? Array.Empty<BlendShapeInfluenceResult>() : results.ToArray();
-        }
-
-        private static void BakeSampleMesh(
-            SkinnedMeshRenderer renderer,
-            Mesh bakedMesh,
-            out Matrix4x4 sampleToWorldMatrix,
-            out Matrix4x4 deltaToWorldMatrix)
-        {
-            renderer.BakeMesh(bakedMesh, true);
-            sampleToWorldMatrix = CreateBakeMeshUseScaleToWorldMatrix(renderer);
-            deltaToWorldMatrix = renderer.localToWorldMatrix;
-        }
-
-        private static Matrix4x4 CreateBakeMeshUseScaleToWorldMatrix(SkinnedMeshRenderer renderer)
-        {
-            // BakeMesh(..., true) は renderer 自身の localScale を頂点側へ焼き込むため、その分だけ行列側から外す。
-            return renderer.localToWorldMatrix * Matrix4x4.Scale(CreateInverseScale(renderer.transform.localScale));
-        }
-
-        private static Vector3 CreateInverseScale(Vector3 scale)
-        {
-            return new Vector3(
-                Mathf.Abs(scale.x) > ScaleEpsilon ? 1f / scale.x : 0f,
-                Mathf.Abs(scale.y) > ScaleEpsilon ? 1f / scale.y : 0f,
-                Mathf.Abs(scale.z) > ScaleEpsilon ? 1f / scale.z : 0f);
         }
 
         private static List<BlendShapeInfluenceWeightedVertex> CollectWeightedVertices(

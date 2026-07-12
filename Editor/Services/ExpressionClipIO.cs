@@ -220,8 +220,24 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return false;
             }
 
-            SaveClipToAsset(clip, filePath);
-            return true;
+            return SaveClipToProject(clip, filePath);
+        }
+
+        /// <summary>
+        /// ファイル選択後の保存処理を実行し、失敗時は false を返す。
+        /// </summary>
+        public static bool SaveClipToProject(AnimationClip clip, string filePath)
+        {
+            try
+            {
+                SaveClipToAsset(clip, filePath);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                return false;
+            }
         }
 
         /// <summary>
@@ -231,21 +247,48 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// 保存先に AnimationClip アセットが存在しない場合は、渡された <paramref name="clip"/> 自体が
         /// 新規アセットになる。呼び出し側は保存後に <see cref="EditorUtility.IsPersistent"/> を確認してから破棄すること。
         /// 既存アセットへの上書き時は内容だけをコピーするため、<paramref name="clip"/> は一時オブジェクトのまま残る。
+        /// 保存後に再読込できない場合は例外を投げる。
         /// </remarks>
-        public static void SaveClipToAsset(AnimationClip clip, string filePath)
+        public static AnimationClip SaveClipToAsset(AnimationClip clip, string filePath)
         {
-            var asset = AssetDatabase.LoadAssetAtPath(filePath, typeof(AnimationClip));
+            if (clip == null)
+            {
+                throw new ArgumentNullException(nameof(clip));
+            }
+
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                throw new ArgumentException("保存先が指定されていません。", nameof(filePath));
+            }
+
+            var asset = AssetDatabase.LoadAssetAtPath<AnimationClip>(filePath);
             if (asset == null)
             {
+                if (AssetDatabase.LoadMainAssetAtPath(filePath) != null)
+                {
+                    throw new InvalidOperationException($"保存先には AnimationClip 以外のアセットがあります: {filePath}");
+                }
+
                 AssetDatabase.CreateAsset(clip, filePath);
             }
             else
             {
+                var assetName = asset.name;
                 EditorUtility.CopySerialized(clip, asset);
-                AssetDatabase.SaveAssets();
+                asset.name = assetName;
+                EditorUtility.SetDirty(asset);
             }
 
-            AssetDatabase.Refresh();
+            AssetDatabase.SaveAssets();
+            AssetDatabase.ImportAsset(filePath, ImportAssetOptions.ForceUpdate);
+
+            var savedClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(filePath);
+            if (savedClip == null)
+            {
+                throw new InvalidOperationException($"AnimationClip の保存後にアセットを再読込できませんでした: {filePath}");
+            }
+
+            return savedClip;
         }
 
         public static AnimationCurve CopyCurve(AnimationCurve sourceCurve)

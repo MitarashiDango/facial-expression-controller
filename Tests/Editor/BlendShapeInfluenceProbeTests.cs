@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using Unity.Collections;
 using UnityEngine;
 
 namespace MitarashiDango.FacialExpressionController.Editor.Tests
@@ -9,7 +10,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
     {
         private const float PositionTolerance = 0.0005f;
         private const float ScoreTolerance = 0.00001f;
-        private const float ScaleEpsilon = 1e-7f;
 
         private readonly List<Object> _createdObjects = new List<Object>();
 
@@ -48,7 +48,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
         [Test]
         public void TryRaycastMesh_AppliesNonUniformScaleAndRotationMatrix()
         {
-            var mesh = CreateTwoLayerMesh();
+            var mesh = CreateSingleTriangleMesh();
             var matrix = Matrix4x4.TRS(
                 new Vector3(1.25f, -0.35f, 2.5f),
                 Quaternion.Euler(18f, -37f, 12f),
@@ -58,9 +58,9 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
                 + mesh.vertices[1] * 0.35f
                 + mesh.vertices[2] * 0.4f;
             var targetWorldPosition = matrix.MultiplyPoint3x4(targetLocalPosition);
-            var worldNormal = matrix.MultiplyVector(Vector3.Cross(
-                mesh.vertices[1] - mesh.vertices[0],
-                mesh.vertices[2] - mesh.vertices[0])).normalized;
+            var worldNormal = Vector3.Cross(
+                matrix.MultiplyPoint3x4(mesh.vertices[1]) - matrix.MultiplyPoint3x4(mesh.vertices[0]),
+                matrix.MultiplyPoint3x4(mesh.vertices[2]) - matrix.MultiplyPoint3x4(mesh.vertices[0])).normalized;
             var ray = new Ray(targetWorldPosition + worldNormal * 2f, -worldNormal);
 
             var hitFound = BlendShapeInfluenceProbe.TryRaycastMesh(
@@ -214,52 +214,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             }
         }
 
-        [Test]
-        public void BakeMeshUseScaleFalse_ScaledRendererDoesNotMatchVisualWorldWithRendererScaleRemovedMatrix()
-        {
-            var fixture = CreateProbeRendererFixture(
-                new Vector3(2f, 1f, 0.5f),
-                new Vector3(0.8f, 1.3f, 1.1f),
-                new Vector3(0.7f, 1.4f, 0.6f));
-            var bakedWithoutScale = CreateTemporaryMesh("BakedWithoutScale");
-
-            fixture.Renderer.BakeMesh(bakedWithoutScale, false);
-
-            Assert.That(bakedWithoutScale.vertexCount, Is.EqualTo(fixture.DeformedVertices.Length));
-            for (var i = 0; i < fixture.DeformedVertices.Length; i++)
-            {
-                var expectedWorldPosition = CreateRendererScaleRemovedWorldMatrix(fixture.Renderer)
-                    .MultiplyPoint3x4(bakedWithoutScale.vertices[i]);
-                var scaledWorldPosition = fixture.Renderer.localToWorldMatrix.MultiplyPoint3x4(
-                    fixture.DeformedVertices[i]);
-                Assert.That(
-                    (expectedWorldPosition - scaledWorldPosition).magnitude,
-                    Is.GreaterThan(PositionTolerance));
-            }
-        }
-
-        [TestCaseSource(nameof(BakeMeshUseScaleCases))]
-        public void BakeMeshUseScaleTrue_OutputMatchesVisualWorldWithRendererScaleRemovedMatrix(
-            Vector3 rootScale,
-            Vector3 parentScale,
-            Vector3 rendererScale)
-        {
-            var fixture = CreateProbeRendererFixture(rootScale, parentScale, rendererScale);
-            var bakedWithScale = CreateTemporaryMesh("BakedWithScale");
-
-            fixture.Renderer.BakeMesh(bakedWithScale, true);
-
-            Assert.That(bakedWithScale.vertexCount, Is.EqualTo(fixture.DeformedVertices.Length));
-            for (var i = 0; i < fixture.DeformedVertices.Length; i++)
-            {
-                var actualWorldPosition = CreateRendererScaleRemovedWorldMatrix(fixture.Renderer)
-                    .MultiplyPoint3x4(bakedWithScale.vertices[i]);
-                var expectedWorldPosition = fixture.Renderer.localToWorldMatrix.MultiplyPoint3x4(
-                    fixture.DeformedVertices[i]);
-                AssertVector3Near(actualWorldPosition, expectedWorldPosition, PositionTolerance);
-            }
-        }
-
         [TestCaseSource(nameof(TryProbeScaleCases))]
         public void TryProbe_ReturnsExpectedHitAcrossScaledHierarchy(
             Vector3 rootScale,
@@ -268,15 +222,16 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
         {
             var fixture = CreateProbeRendererFixture(rootScale, parentScale, rendererScale);
             var barycentric = new Vector3(0.25f, 0.35f, 0.4f);
+            var worldVertex0 = fixture.TransformDeformedVertex(0);
+            var worldVertex1 = fixture.TransformDeformedVertex(1);
+            var worldVertex2 = fixture.TransformDeformedVertex(2);
             var expectedWorldPosition =
-                fixture.Renderer.localToWorldMatrix.MultiplyPoint3x4(fixture.DeformedVertices[0]) * barycentric.x
-                + fixture.Renderer.localToWorldMatrix.MultiplyPoint3x4(fixture.DeformedVertices[1]) * barycentric.y
-                + fixture.Renderer.localToWorldMatrix.MultiplyPoint3x4(fixture.DeformedVertices[2]) * barycentric.z;
+                worldVertex0 * barycentric.x
+                + worldVertex1 * barycentric.y
+                + worldVertex2 * barycentric.z;
             var worldNormal = Vector3.Cross(
-                fixture.Renderer.localToWorldMatrix.MultiplyPoint3x4(fixture.DeformedVertices[1])
-                - fixture.Renderer.localToWorldMatrix.MultiplyPoint3x4(fixture.DeformedVertices[0]),
-                fixture.Renderer.localToWorldMatrix.MultiplyPoint3x4(fixture.DeformedVertices[2])
-                - fixture.Renderer.localToWorldMatrix.MultiplyPoint3x4(fixture.DeformedVertices[0])).normalized;
+                worldVertex1 - worldVertex0,
+                worldVertex2 - worldVertex0).normalized;
             var ray = new Ray(expectedWorldPosition + worldNormal * 2f, -worldNormal);
 
             var hitFound = BlendShapeInfluenceProbe.TryProbe(
@@ -299,9 +254,429 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             Assert.That(results.Select(result => result.BlendShapeName), Does.Not.Contain("Tiny"));
 
             var raiseResult = results.Single(result => result.BlendShapeName == "Raise");
-            var expectedScore = CalculateExpectedRaiseScore(fixture.Renderer, barycentric, out var expectedMaxDelta);
+            var expectedScore = CalculateExpectedRaiseScore(fixture, barycentric, out var expectedMaxDelta);
             Assert.That(raiseResult.Score, Is.EqualTo(expectedScore).Within(ScoreTolerance));
             Assert.That(raiseResult.MaxDelta, Is.EqualTo(expectedMaxDelta).Within(ScoreTolerance));
+        }
+
+        [Test]
+        public void TryProbe_ReusedContext_RecomputesSkinningMatricesAfterBoneTransformChanges()
+        {
+            var fixture = CreateProbeRendererFixture(Vector3.one, Vector3.one, Vector3.one);
+            var barycentric = new Vector3(0.25f, 0.35f, 0.4f);
+            using (var context = new BlendShapeInfluenceProbeContext())
+            {
+                Assert.That(TryProbeFixture(fixture, barycentric, context, out var firstResults), Is.True);
+                var firstRaise = firstResults.Single(result => result.BlendShapeName == "Raise");
+                var firstScore = firstRaise.Score;
+                var firstMaxDelta = firstRaise.MaxDelta;
+
+                fixture.Bone.localScale = new Vector3(0.5f, 2f, 1.5f);
+
+                Assert.That(TryProbeFixture(fixture, barycentric, context, out var secondResults), Is.True);
+                var secondRaise = secondResults.Single(result => result.BlendShapeName == "Raise");
+                var expectedScore = CalculateExpectedRaiseScore(fixture, barycentric, out var expectedMaxDelta);
+
+                Assert.That(secondRaise.Score, Is.EqualTo(expectedScore).Within(ScoreTolerance));
+                Assert.That(secondRaise.MaxDelta, Is.EqualTo(expectedMaxDelta).Within(ScoreTolerance));
+                Assert.That(secondRaise.Score, Is.Not.EqualTo(firstScore).Within(ScoreTolerance));
+                Assert.That(firstRaise.Score, Is.EqualTo(firstScore).Within(ScoreTolerance));
+                Assert.That(firstRaise.MaxDelta, Is.EqualTo(firstMaxDelta).Within(ScoreTolerance));
+            }
+        }
+
+        [Test]
+        public void TryProbe_ReusedContext_UsesReplacedRendererBones()
+        {
+            var fixture = CreateProbeRendererFixture(Vector3.one, Vector3.one, Vector3.one);
+            var barycentric = new Vector3(0.25f, 0.35f, 0.4f);
+            using (var context = new BlendShapeInfluenceProbeContext())
+            {
+                Assert.That(TryProbeFixture(fixture, barycentric, context, out _), Is.True);
+
+                var replacementBone = CreateGameObject("ReplacementProbeBone");
+                replacementBone.transform.SetParent(fixture.Bone.parent, false);
+                replacementBone.transform.localPosition = new Vector3(0.18f, -0.12f, 0.09f);
+                replacementBone.transform.localRotation = Quaternion.Euler(-17f, 26f, 8f);
+                replacementBone.transform.localScale = new Vector3(1.4f, 0.7f, 1.8f);
+                fixture.Renderer.bones = new[] { replacementBone.transform };
+                fixture.Renderer.rootBone = replacementBone.transform;
+
+                var bakedAtZero = new Mesh { name = "ReplacedBonesBakedAtZero" };
+                var bakedAtFull = new Mesh { name = "ReplacedBonesBakedAtFull" };
+                _createdObjects.Add(bakedAtZero);
+                _createdObjects.Add(bakedAtFull);
+                fixture.Renderer.SetBlendShapeWeight(0, 0f);
+                fixture.Renderer.BakeMesh(bakedAtZero, false);
+                fixture.Renderer.SetBlendShapeWeight(0, 100f);
+                fixture.Renderer.BakeMesh(bakedAtFull, false);
+
+                var bakedWorldVertices = bakedAtFull.vertices
+                    .Select(fixture.Renderer.localToWorldMatrix.MultiplyPoint3x4)
+                    .ToArray();
+                var expectedPosition =
+                    bakedWorldVertices[0] * barycentric.x
+                    + bakedWorldVertices[1] * barycentric.y
+                    + bakedWorldVertices[2] * barycentric.z;
+                var worldNormal = Vector3.Cross(
+                    bakedWorldVertices[1] - bakedWorldVertices[0],
+                    bakedWorldVertices[2] - bakedWorldVertices[0]).normalized;
+
+                var hitFound = BlendShapeInfluenceProbe.TryProbe(
+                    fixture.Renderer,
+                    new Ray(expectedPosition + worldNormal * 2f, -worldNormal),
+                    new BlendShapeInfluenceProbeOptions
+                    {
+                        worldRadius = 0f,
+                        minimumDelta = 0.000001f,
+                        maxResults = 50,
+                    },
+                    context,
+                    out var hit,
+                    out var results);
+
+                Assert.That(hitFound, Is.True);
+                AssertVector3Near(hit.WorldPosition, expectedPosition, PositionTolerance);
+                var raiseResult = results.Single(result => result.BlendShapeName == "Raise");
+                var barycentricWeights = new[] { barycentric.x, barycentric.y, barycentric.z };
+                var expectedScore = 0f;
+                var expectedMaxDelta = 0f;
+                for (var i = 0; i < barycentricWeights.Length; i++)
+                {
+                    var bakedDelta = fixture.Renderer.localToWorldMatrix.MultiplyVector(
+                        bakedAtFull.vertices[i] - bakedAtZero.vertices[i]);
+                    var magnitude = bakedDelta.magnitude;
+                    expectedScore = Mathf.Max(expectedScore, magnitude * barycentricWeights[i]);
+                    expectedMaxDelta = Mathf.Max(expectedMaxDelta, magnitude);
+                }
+
+                Assert.That(raiseResult.Score, Is.EqualTo(expectedScore).Within(ScoreTolerance));
+                Assert.That(raiseResult.MaxDelta, Is.EqualTo(expectedMaxDelta).Within(ScoreTolerance));
+            }
+        }
+
+        [Test]
+        public void TryProbe_MultiBoneNonUniformScale_UsesWeightedSkinningDelta()
+        {
+            var root = CreateGameObject("MultiBoneRoot");
+            root.transform.position = new Vector3(-0.4f, 0.8f, 1.2f);
+            root.transform.rotation = Quaternion.Euler(7f, -23f, 11f);
+
+            var rendererObject = CreateGameObject("MultiBoneRenderer");
+            rendererObject.transform.SetParent(root.transform, false);
+            rendererObject.transform.localPosition = new Vector3(0.2f, -0.1f, 0.3f);
+            rendererObject.transform.localRotation = Quaternion.Euler(13f, 19f, -5f);
+
+            var bone0 = CreateGameObject("MultiBone0");
+            bone0.transform.SetParent(root.transform, false);
+            var bone1 = CreateGameObject("MultiBone1");
+            bone1.transform.SetParent(root.transform, false);
+
+            var vertices = new[]
+            {
+                new Vector3(0.1f, 0.05f, 0f),
+                new Vector3(0.7f, 0.1f, 0.02f),
+                new Vector3(0.15f, 0.6f, -0.03f),
+            };
+            var deltas = new[]
+            {
+                new Vector3(0.02f, 0.01f, 0.015f),
+                new Vector3(0.01f, 0.025f, 0.005f),
+                new Vector3(0.015f, 0.005f, 0.02f),
+            };
+            var boneWeights = new[]
+            {
+                CreateBoneWeight(0.75f),
+                CreateBoneWeight(0.25f),
+                CreateBoneWeight(0.5f),
+            };
+            var bindPoses = new[]
+            {
+                bone0.transform.worldToLocalMatrix * rendererObject.transform.localToWorldMatrix,
+                bone1.transform.worldToLocalMatrix * rendererObject.transform.localToWorldMatrix,
+            };
+            var mesh = new Mesh
+            {
+                name = "MultiBoneProbeMesh",
+                vertices = vertices,
+                triangles = new[] { 0, 1, 2 },
+                boneWeights = boneWeights,
+                bindposes = bindPoses,
+            };
+            AddBlendShape(mesh, "Weighted", deltas);
+            mesh.RecalculateBounds();
+            _createdObjects.Add(mesh);
+
+            var renderer = rendererObject.AddComponent<SkinnedMeshRenderer>();
+            renderer.sharedMesh = mesh;
+            renderer.bones = new[] { bone0.transform, bone1.transform };
+            renderer.rootBone = bone0.transform;
+            renderer.SetBlendShapeWeight(0, 100f);
+
+            bone0.transform.localScale = new Vector3(2f, 0.75f, 1.25f);
+            bone1.transform.localPosition = new Vector3(0.1f, -0.05f, 0.08f);
+            bone1.transform.localRotation = Quaternion.Euler(-9f, 14f, 6f);
+            bone1.transform.localScale = new Vector3(0.6f, 1.8f, 0.9f);
+            var skinningMatrices = new[]
+            {
+                bone0.transform.localToWorldMatrix * bindPoses[0],
+                bone1.transform.localToWorldMatrix * bindPoses[1],
+            };
+
+            var worldVertices = new Vector3[vertices.Length];
+            for (var i = 0; i < vertices.Length; i++)
+            {
+                worldVertices[i] = TransformWeightedPoint(
+                    vertices[i] + deltas[i],
+                    boneWeights[i],
+                    skinningMatrices);
+            }
+
+            var barycentric = new Vector3(0.2f, 0.3f, 0.5f);
+            var expectedPosition =
+                worldVertices[0] * barycentric.x
+                + worldVertices[1] * barycentric.y
+                + worldVertices[2] * barycentric.z;
+            var worldNormal = Vector3.Cross(
+                worldVertices[1] - worldVertices[0],
+                worldVertices[2] - worldVertices[0]).normalized;
+
+            var hitFound = BlendShapeInfluenceProbe.TryProbe(
+                renderer,
+                new Ray(expectedPosition + worldNormal * 2f, -worldNormal),
+                new BlendShapeInfluenceProbeOptions
+                {
+                    worldRadius = 0f,
+                    minimumDelta = 0.000001f,
+                    maxResults = 50,
+                },
+                out var hit,
+                out var results);
+
+            Assert.That(hitFound, Is.True);
+            AssertVector3Near(hit.WorldPosition, expectedPosition, PositionTolerance);
+            var result = results.Single(item => item.BlendShapeName == "Weighted");
+            var barycentricWeights = new[] { barycentric.x, barycentric.y, barycentric.z };
+            var expectedScore = 0f;
+            var expectedMaxDelta = 0f;
+            for (var i = 0; i < deltas.Length; i++)
+            {
+                var magnitude = TransformWeightedVector(deltas[i], boneWeights[i], skinningMatrices).magnitude;
+                expectedScore = Mathf.Max(expectedScore, magnitude * barycentricWeights[i]);
+                expectedMaxDelta = Mathf.Max(expectedMaxDelta, magnitude);
+            }
+
+            Assert.That(result.Score, Is.EqualTo(expectedScore).Within(ScoreTolerance));
+            Assert.That(result.MaxDelta, Is.EqualTo(expectedMaxDelta).Within(ScoreTolerance));
+        }
+
+        [TestCase(SkinQuality.Bone1, SkinWeights.Unlimited, TestName = "TryProbe matches BakeMesh with Bone1 quality")]
+        [TestCase(SkinQuality.Bone2, SkinWeights.Unlimited, TestName = "TryProbe matches BakeMesh with Bone2 quality")]
+        [TestCase(SkinQuality.Auto, SkinWeights.Unlimited, TestName = "TryProbe matches BakeMesh with Auto Unlimited and five weights")]
+        public void TryProbe_QualityLimitedAndUnlimitedWeights_MatchesBakeMesh(
+            SkinQuality rendererQuality,
+            SkinWeights qualitySkinWeights)
+        {
+            var previousSkinWeights = QualitySettings.skinWeights;
+            try
+            {
+                QualitySettings.skinWeights = qualitySkinWeights;
+                var rendererObject = CreateGameObject("QualityProbeRenderer");
+                var renderer = rendererObject.AddComponent<SkinnedMeshRenderer>();
+                var bones = new Transform[5];
+                for (var i = 0; i < bones.Length; i++)
+                {
+                    bones[i] = CreateGameObject($"QualityProbeBone{i}").transform;
+                }
+
+                var vertices = new[]
+                {
+                    new Vector3(0.1f, 0.05f, 0.02f),
+                    new Vector3(0.7f, 0.08f, -0.03f),
+                    new Vector3(0.16f, 0.62f, 0.04f),
+                };
+                var deltas = new[]
+                {
+                    new Vector3(0.025f, 0.01f, 0.015f),
+                    new Vector3(0.01f, 0.03f, 0.005f),
+                    new Vector3(0.015f, 0.005f, 0.025f),
+                };
+                var mesh = CreateFiveWeightProbeMesh(vertices, deltas, bones.Length);
+                renderer.sharedMesh = mesh;
+                renderer.bones = bones;
+                renderer.rootBone = bones[0];
+                renderer.quality = rendererQuality;
+
+                for (var i = 0; i < bones.Length; i++)
+                {
+                    bones[i].position = new Vector3(0.03f * i, -0.02f * i, 0.015f * i);
+                    bones[i].rotation = Quaternion.Euler(3f * i, -7f * i, 5f * i);
+                    bones[i].localScale = new Vector3(1f + 0.15f * i, 1f - 0.08f * i, 1f + 0.05f * i);
+                }
+
+                var bakedAtZero = new Mesh { name = "QualityBakedAtZero" };
+                var bakedAtFull = new Mesh { name = "QualityBakedAtFull" };
+                _createdObjects.Add(bakedAtZero);
+                _createdObjects.Add(bakedAtFull);
+                renderer.SetBlendShapeWeight(0, 0f);
+                renderer.BakeMesh(bakedAtZero, false);
+                renderer.SetBlendShapeWeight(0, 100f);
+                renderer.BakeMesh(bakedAtFull, false);
+
+                var bakedWorldVertices = bakedAtFull.vertices
+                    .Select(renderer.localToWorldMatrix.MultiplyPoint3x4)
+                    .ToArray();
+                var barycentric = new Vector3(0.2f, 0.3f, 0.5f);
+                var expectedPosition =
+                    bakedWorldVertices[0] * barycentric.x
+                    + bakedWorldVertices[1] * barycentric.y
+                    + bakedWorldVertices[2] * barycentric.z;
+                var worldNormal = Vector3.Cross(
+                    bakedWorldVertices[1] - bakedWorldVertices[0],
+                    bakedWorldVertices[2] - bakedWorldVertices[0]).normalized;
+
+                var hitFound = BlendShapeInfluenceProbe.TryProbe(
+                    renderer,
+                    new Ray(expectedPosition + worldNormal * 2f, -worldNormal),
+                    new BlendShapeInfluenceProbeOptions
+                    {
+                        worldRadius = 0f,
+                        minimumDelta = 0.000001f,
+                        maxResults = 50,
+                    },
+                    out var hit,
+                    out var results);
+
+                Assert.That(hitFound, Is.True);
+                AssertVector3Near(hit.WorldPosition, expectedPosition, PositionTolerance);
+                var result = results.Single(item => item.BlendShapeName == "QualityWeighted");
+                var barycentricWeights = new[] { barycentric.x, barycentric.y, barycentric.z };
+                var expectedScore = 0f;
+                var expectedMaxDelta = 0f;
+                for (var i = 0; i < vertices.Length; i++)
+                {
+                    var bakedDelta = renderer.localToWorldMatrix.MultiplyVector(
+                        bakedAtFull.vertices[i] - bakedAtZero.vertices[i]);
+                    var magnitude = bakedDelta.magnitude;
+                    expectedScore = Mathf.Max(expectedScore, magnitude * barycentricWeights[i]);
+                    expectedMaxDelta = Mathf.Max(expectedMaxDelta, magnitude);
+                }
+
+                Assert.That(result.Score, Is.EqualTo(expectedScore).Within(ScoreTolerance));
+                Assert.That(result.MaxDelta, Is.EqualTo(expectedMaxDelta).Within(ScoreTolerance));
+
+                var bonesPerVertex = mesh.GetBonesPerVertex();
+                Assert.That(bonesPerVertex[0], Is.EqualTo(5));
+            }
+            finally
+            {
+                QualitySettings.skinWeights = previousSkinWeights;
+            }
+        }
+
+        private static bool TryProbeFixture(
+            ProbeRendererFixture fixture,
+            Vector3 barycentric,
+            BlendShapeInfluenceProbeContext context,
+            out IReadOnlyList<BlendShapeInfluenceResult> results)
+        {
+            var worldVertex0 = fixture.TransformDeformedVertex(0);
+            var worldVertex1 = fixture.TransformDeformedVertex(1);
+            var worldVertex2 = fixture.TransformDeformedVertex(2);
+            var expectedWorldPosition =
+                worldVertex0 * barycentric.x
+                + worldVertex1 * barycentric.y
+                + worldVertex2 * barycentric.z;
+            var worldNormal = Vector3.Cross(worldVertex1 - worldVertex0, worldVertex2 - worldVertex0).normalized;
+            var ray = new Ray(expectedWorldPosition + worldNormal * 2f, -worldNormal);
+
+            return BlendShapeInfluenceProbe.TryProbe(
+                fixture.Renderer,
+                ray,
+                new BlendShapeInfluenceProbeOptions
+                {
+                    worldRadius = 0f,
+                    minimumDelta = 0.000001f,
+                    maxResults = 50,
+                },
+                context,
+                out _,
+                out results);
+        }
+
+        private static BoneWeight CreateBoneWeight(float bone0Weight)
+        {
+            return new BoneWeight
+            {
+                boneIndex0 = 0,
+                weight0 = bone0Weight,
+                boneIndex1 = 1,
+                weight1 = 1f - bone0Weight,
+            };
+        }
+
+        private Mesh CreateFiveWeightProbeMesh(
+            IReadOnlyList<Vector3> vertices,
+            Vector3[] deltas,
+            int boneCount)
+        {
+            var mesh = new Mesh
+            {
+                name = "FiveWeightProbeMesh",
+                vertices = vertices.ToArray(),
+                triangles = new[] { 0, 1, 2 },
+                bindposes = Enumerable.Repeat(Matrix4x4.identity, boneCount).ToArray(),
+            };
+            var weightsByBone = new[] { 0.4f, 0.25f, 0.15f, 0.12f, 0.08f };
+            var bonesPerVertex = new byte[vertices.Count];
+            var allWeights = new BoneWeight1[vertices.Count * weightsByBone.Length];
+            for (var vertexIndex = 0; vertexIndex < vertices.Count; vertexIndex++)
+            {
+                bonesPerVertex[vertexIndex] = (byte)weightsByBone.Length;
+                for (var boneIndex = 0; boneIndex < weightsByBone.Length; boneIndex++)
+                {
+                    allWeights[vertexIndex * weightsByBone.Length + boneIndex] = new BoneWeight1
+                    {
+                        boneIndex = boneIndex,
+                        weight = weightsByBone[boneIndex],
+                    };
+                }
+            }
+
+            var bonesPerVertexArray = new NativeArray<byte>(bonesPerVertex, Allocator.Temp);
+            var allWeightsArray = new NativeArray<BoneWeight1>(allWeights, Allocator.Temp);
+            try
+            {
+                mesh.SetBoneWeights(bonesPerVertexArray, allWeightsArray);
+            }
+            finally
+            {
+                bonesPerVertexArray.Dispose();
+                allWeightsArray.Dispose();
+            }
+
+            AddBlendShape(mesh, "QualityWeighted", deltas);
+            mesh.RecalculateBounds();
+            _createdObjects.Add(mesh);
+            return mesh;
+        }
+
+        private static Vector3 TransformWeightedPoint(
+            Vector3 point,
+            BoneWeight boneWeight,
+            IReadOnlyList<Matrix4x4> skinningMatrices)
+        {
+            return skinningMatrices[boneWeight.boneIndex0].MultiplyPoint3x4(point) * boneWeight.weight0
+                + skinningMatrices[boneWeight.boneIndex1].MultiplyPoint3x4(point) * boneWeight.weight1;
+        }
+
+        private static Vector3 TransformWeightedVector(
+            Vector3 vector,
+            BoneWeight boneWeight,
+            IReadOnlyList<Matrix4x4> skinningMatrices)
+        {
+            return skinningMatrices[boneWeight.boneIndex0].MultiplyVector(vector) * boneWeight.weight0
+                + skinningMatrices[boneWeight.boneIndex1].MultiplyVector(vector) * boneWeight.weight1;
         }
 
         private Mesh CreateTwoLayerMesh()
@@ -325,12 +700,20 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             return mesh;
         }
 
-        private Mesh CreateTemporaryMesh(string name)
+        private Mesh CreateSingleTriangleMesh()
         {
             var mesh = new Mesh
             {
-                name = name,
+                name = "SingleTriangleInfluenceRaycastMesh",
+                vertices = new[]
+                {
+                    new Vector3(0f, 0f, 0f),
+                    new Vector3(1f, 0f, 0f),
+                    new Vector3(0f, 1f, 0f),
+                },
+                triangles = new[] { 0, 1, 2 },
             };
+            mesh.RecalculateBounds();
             _createdObjects.Add(mesh);
             return mesh;
         }
@@ -397,7 +780,11 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             rendererObject.transform.localScale = rendererScale;
             renderer.SetBlendShapeWeight(0, 100f);
 
-            return new ProbeRendererFixture(renderer, CreateProbeDeformedVertices());
+            return new ProbeRendererFixture(
+                renderer,
+                boneObject.transform,
+                mesh.bindposes[0],
+                CreateProbeDeformedVertices());
         }
 
         private GameObject CreateGameObject(string name)
@@ -414,7 +801,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             {
                 name = "ProbeSkinnedMesh",
                 vertices = vertices,
-                triangles = new[] { 0, 1, 2, 1, 3, 2 },
+                triangles = new[] { 0, 1, 2 },
                 boneWeights = Enumerable.Repeat(
                     new BoneWeight
                     {
@@ -470,7 +857,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
         }
 
         private static float CalculateExpectedRaiseScore(
-            SkinnedMeshRenderer renderer,
+            ProbeRendererFixture fixture,
             Vector3 barycentric,
             out float expectedMaxDelta)
         {
@@ -481,7 +868,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
 
             for (var i = 0; i < weights.Length; i++)
             {
-                var deltaMagnitude = renderer.localToWorldMatrix.MultiplyVector(deltas[i]).magnitude;
+                var deltaMagnitude = fixture.SkinningMatrix.MultiplyVector(deltas[i]).magnitude;
                 if (deltaMagnitude > expectedMaxDelta)
                 {
                     expectedMaxDelta = deltaMagnitude;
@@ -495,32 +882,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             }
 
             return expectedScore;
-        }
-
-        private static Matrix4x4 CreateRendererScaleRemovedWorldMatrix(SkinnedMeshRenderer renderer)
-        {
-            return renderer.localToWorldMatrix * Matrix4x4.Scale(CreateInverseScale(renderer.transform.localScale));
-        }
-
-        private static Vector3 CreateInverseScale(Vector3 scale)
-        {
-            return new Vector3(
-                Mathf.Abs(scale.x) > ScaleEpsilon ? 1f / scale.x : 0f,
-                Mathf.Abs(scale.y) > ScaleEpsilon ? 1f / scale.y : 0f,
-                Mathf.Abs(scale.z) > ScaleEpsilon ? 1f / scale.z : 0f);
-        }
-
-        private static IEnumerable<TestCaseData> BakeMeshUseScaleCases()
-        {
-            yield return new TestCaseData(Vector3.one * 2f, Vector3.one, Vector3.one)
-                .SetName("BakeMesh true root scale 2");
-            yield return new TestCaseData(Vector3.one, Vector3.one, new Vector3(0.7f, 1.4f, 0.6f))
-                .SetName("BakeMesh true renderer scale only");
-            yield return new TestCaseData(
-                    new Vector3(2f, 1f, 0.5f),
-                    new Vector3(0.8f, 1.3f, 1.1f),
-                    new Vector3(0.7f, 1.4f, 0.6f))
-                .SetName("BakeMesh true mixed non-uniform scale");
         }
 
         private static IEnumerable<TestCaseData> TryProbeScaleCases()
@@ -564,14 +925,28 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
 
         private sealed class ProbeRendererFixture
         {
-            public ProbeRendererFixture(SkinnedMeshRenderer renderer, Vector3[] deformedVertices)
+            public ProbeRendererFixture(
+                SkinnedMeshRenderer renderer,
+                Transform bone,
+                Matrix4x4 bindPose,
+                Vector3[] deformedVertices)
             {
                 Renderer = renderer;
+                Bone = bone;
+                BindPose = bindPose;
                 DeformedVertices = deformedVertices;
             }
 
             public SkinnedMeshRenderer Renderer { get; }
+            public Transform Bone { get; }
+            public Matrix4x4 BindPose { get; }
             public Vector3[] DeformedVertices { get; }
+            public Matrix4x4 SkinningMatrix => Bone.localToWorldMatrix * BindPose;
+
+            public Vector3 TransformDeformedVertex(int vertexIndex)
+            {
+                return SkinningMatrix.MultiplyPoint3x4(DeformedVertices[vertexIndex]);
+            }
         }
     }
 }

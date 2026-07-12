@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 using VRC.SDK3.Avatars.Components;
 
 namespace MitarashiDango.FacialExpressionController.Editor.Tests
@@ -40,11 +42,11 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             var assetPath = GenerateAssetPath("ExpressionClipIOTests_NewAsset.anim");
             _assetPaths.Add(assetPath);
 
-            ExpressionClipIO.SaveClipToAsset(clip, assetPath);
+            var savedClip = ExpressionClipIO.SaveClipToAsset(clip, assetPath);
 
             Assert.That(EditorUtility.IsPersistent(clip), Is.True);
             Assert.That(AssetDatabase.GetAssetPath(clip), Is.EqualTo(assetPath));
-            Assert.That(AssetDatabase.LoadAssetAtPath<AnimationClip>(assetPath), Is.Not.Null);
+            Assert.That(savedClip, Is.SameAs(AssetDatabase.LoadAssetAtPath<AnimationClip>(assetPath)));
         }
 
         [Test]
@@ -54,6 +56,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             var assetPath = GenerateAssetPath("ExpressionClipIOTests_ExistingAsset.anim");
             AssetDatabase.CreateAsset(existingClip, assetPath);
             _assetPaths.Add(assetPath);
+            var originalGuid = AssetDatabase.AssetPathToGUID(assetPath);
+            var originalName = existingClip.name;
 
             var replacementClip = new AnimationClip { name = "ReplacementExpression" };
             replacementClip.SetCurve(
@@ -63,12 +67,108 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
                 new AnimationCurve(new Keyframe(0f, 1f)));
             _temporaryObjects.Add(replacementClip);
 
-            ExpressionClipIO.SaveClipToAsset(replacementClip, assetPath);
+            var savedClip = ExpressionClipIO.SaveClipToAsset(replacementClip, assetPath);
 
             Assert.That(EditorUtility.IsPersistent(replacementClip), Is.False);
-            var savedClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(assetPath);
             Assert.That(savedClip, Is.Not.Null);
-            Assert.That(AnimationUtility.GetEditorCurve(savedClip, EditorCurveBinding.FloatCurve("", typeof(Transform), "localPosition.x")), Is.Not.Null);
+            Assert.That(savedClip.name, Is.EqualTo(originalName));
+            Assert.That(AssetDatabase.AssetPathToGUID(assetPath), Is.EqualTo(originalGuid));
+            Assert.That(savedClip, Is.SameAs(AssetDatabase.LoadAssetAtPath<AnimationClip>(assetPath)));
+            Assert.That(AnimationUtility.GetEditorCurve(savedClip, FindLocalPositionXBinding(savedClip, "")), Is.Not.Null);
+        }
+
+        [Test]
+        public void SaveClipToAsset_NonAnimationAssetPath_ThrowsWithoutReplacingAsset()
+        {
+            var existingAsset = new Texture2D(1, 1) { name = "ExistingTexture" };
+            var assetPath = GenerateAssetPath("ExpressionClipIOTests_NonAnimation.asset");
+            AssetDatabase.CreateAsset(existingAsset, assetPath);
+            _assetPaths.Add(assetPath);
+            var originalGuid = AssetDatabase.AssetPathToGUID(assetPath);
+
+            var clip = new AnimationClip { name = "ReplacementExpression" };
+            _temporaryObjects.Add(clip);
+
+            var exception = Assert.Throws<System.InvalidOperationException>(
+                () => ExpressionClipIO.SaveClipToAsset(clip, assetPath));
+
+            Assert.That(exception.Message, Does.Contain("AnimationClip 以外"));
+            var reloadedAsset = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+            Assert.That(reloadedAsset, Is.Not.Null);
+            Assert.That(reloadedAsset.name, Is.EqualTo(existingAsset.name));
+            Assert.That(AssetDatabase.AssetPathToGUID(assetPath), Is.EqualTo(originalGuid));
+            Assert.That(EditorUtility.IsPersistent(clip), Is.False);
+        }
+
+        [Test]
+        public void SaveClipToProject_InternalSaveFailure_ReturnsFalse()
+        {
+            var existingAsset = new Texture2D(1, 1) { name = "ExistingProjectTexture" };
+            var assetPath = GenerateAssetPath("ExpressionClipIOTests_ProjectFailure.asset");
+            AssetDatabase.CreateAsset(existingAsset, assetPath);
+            _assetPaths.Add(assetPath);
+            var originalGuid = AssetDatabase.AssetPathToGUID(assetPath);
+            var clip = new AnimationClip { name = "ProjectFailureClip" };
+            _temporaryObjects.Add(clip);
+            LogAssert.Expect(LogType.Exception, new Regex("AnimationClip 以外"));
+
+            var saved = ExpressionClipIO.SaveClipToProject(clip, assetPath);
+
+            Assert.That(saved, Is.False);
+            Assert.That(AssetDatabase.AssetPathToGUID(assetPath), Is.EqualTo(originalGuid));
+            Assert.That(EditorUtility.IsPersistent(clip), Is.False);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_SaveFailure_KeepsUnsavedStateAndCurrentClip()
+        {
+            var existingAsset = new Texture2D(1, 1) { name = "ExistingWindowTexture" };
+            var assetPath = GenerateAssetPath("ExpressionClipIOTests_WindowFailure.asset");
+            AssetDatabase.CreateAsset(existingAsset, assetPath);
+            _assetPaths.Add(assetPath);
+            var renderer = CreateAvatarRenderer("Smile");
+            var model = ExpressionClipIO.CreateModel(renderer.transform.root.gameObject, renderer);
+            _temporaryObjects.Add(model);
+            var currentClip = new AnimationClip { name = "WindowFailureClip" };
+            _temporaryObjects.Add(currentClip);
+            var window = ScriptableObject.CreateInstance<FacialExpressionEditorWindow>();
+            _temporaryObjects.Add(window);
+            SetPrivateField(window, "_model", model);
+            SetPrivateField(window, "_currentClip", currentClip);
+            SetPrivateField(window, "_currentAssetPath", assetPath);
+            GetPrivateMethod(typeof(FacialExpressionEditorWindow), "SetUnsavedChanges")
+                .Invoke(window, new object[] { true });
+            LogAssert.Expect(LogType.Exception, new Regex("AnimationClip 以外"));
+
+            var saved = (bool)GetPrivateMethod(typeof(FacialExpressionEditorWindow), "TrySave")
+                .Invoke(window, null);
+
+            Assert.That(saved, Is.False);
+            Assert.That(window.hasUnsavedChanges, Is.True);
+            Assert.That(GetPrivateField<AnimationClip>(window, "_currentClip"), Is.SameAs(currentClip));
+            Assert.That(GetPrivateField<string>(window, "_currentAssetPath"), Is.EqualTo(assetPath));
+        }
+
+        [Test]
+        public void FacialExpressionAnimationGenerator_SaveFailure_ReturnsFalseAndDestroysTemporaryClip()
+        {
+            var existingAsset = new Texture2D(1, 1) { name = "ExistingGeneratorTexture" };
+            var assetPath = GenerateAssetPath("ExpressionClipIOTests_GeneratorFailure.asset");
+            AssetDatabase.CreateAsset(existingAsset, assetPath);
+            _assetPaths.Add(assetPath);
+            var clip = new AnimationClip { name = "GeneratorFailureClip" };
+            _temporaryObjects.Add(clip);
+            var arguments = new object[] { clip, assetPath, null };
+
+            var saved = (bool)GetPrivateMethod(
+                    typeof(FacialExpressionAnimationGenerator),
+                    "TrySaveGeneratedClip",
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+                .Invoke(null, arguments);
+
+            Assert.That(saved, Is.False);
+            Assert.That(arguments[2], Is.TypeOf<System.InvalidOperationException>());
+            Assert.That(clip == null, Is.True);
         }
 
         [Test]
@@ -174,7 +274,14 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             var model = ExpressionClipIO.Load(sourceClip, renderer.transform.root.gameObject, renderer);
             _temporaryObjects.Add(model);
 
-            Assert.That(model.preservedCurves, Has.Count.EqualTo(3));
+            var expectedPreservedBindings = AnimationUtility.GetCurveBindings(sourceClip)
+                .Where(binding => binding.path != "Face"
+                    || binding.type != typeof(SkinnedMeshRenderer)
+                    || binding.propertyName != "blendShape.Smile")
+                .Select(GetBindingKey);
+            var actualPreservedBindings = model.preservedCurves
+                .Select(curve => GetBindingKey(curve.ToBinding()));
+            Assert.That(actualPreservedBindings, Is.EquivalentTo(expectedPreservedBindings));
             Assert.That(model.preservedObjectReferenceCurves, Has.Count.EqualTo(1));
 
             var roundTripClip = ExpressionClipIO.ToClip(model, "RoundTrip");
@@ -183,7 +290,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             Assert.That(GetBlendShapeCurve(roundTripClip, "Face", "Smile"), Is.Not.Null);
             var transformCurve = AnimationUtility.GetEditorCurve(
                 roundTripClip,
-                EditorCurveBinding.FloatCurve("Arm", typeof(Transform), "localPosition.x"));
+                FindLocalPositionXBinding(roundTripClip, "Arm"));
             Assert.That(transformCurve, Is.Not.Null);
             Assert.That(transformCurve.keys[1].value, Is.EqualTo(2f).Within(0.0001f));
 
@@ -446,6 +553,47 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             return AnimationUtility.GetEditorCurve(
                 clip,
                 EditorCurveBinding.FloatCurve(path, typeof(SkinnedMeshRenderer), $"blendShape.{blendShapeName}"));
+        }
+
+        private static System.Reflection.MethodInfo GetPrivateMethod(
+            System.Type type,
+            string methodName,
+            System.Reflection.BindingFlags bindingFlags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        {
+            var method = type.GetMethod(methodName, bindingFlags);
+            Assert.That(method, Is.Not.Null, $"Private method was not found: {type.FullName}.{methodName}");
+            return method;
+        }
+
+        private static void SetPrivateField(object target, string fieldName, object value)
+        {
+            var field = target.GetType().GetField(
+                fieldName,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null, $"Private field was not found: {target.GetType().FullName}.{fieldName}");
+            field.SetValue(target, value);
+        }
+
+        private static T GetPrivateField<T>(object target, string fieldName)
+        {
+            var field = target.GetType().GetField(
+                fieldName,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null, $"Private field was not found: {target.GetType().FullName}.{fieldName}");
+            return (T)field.GetValue(target);
+        }
+
+        private static string GetBindingKey(EditorCurveBinding binding)
+        {
+            return $"{binding.path}|{binding.type?.AssemblyQualifiedName}|{binding.propertyName}";
+        }
+
+        private static EditorCurveBinding FindLocalPositionXBinding(AnimationClip clip, string path)
+        {
+            return AnimationUtility.GetCurveBindings(clip).Single(binding =>
+                binding.path == path
+                && binding.type == typeof(Transform)
+                && (binding.propertyName == "localPosition.x" || binding.propertyName == "m_LocalPosition.x"));
         }
 
         private static BlendShapeEntry GetEntry(ExpressionEditModel model, string name)
