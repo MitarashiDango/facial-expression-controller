@@ -1092,12 +1092,15 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private void PreparePendingPartialImportPreviewCapture(PartialImportPreviewCapture capture)
         {
             ExpressionEditModel previewModel = null;
-            GameObject previewAvatarRootObject = null;
+            GameObject previewCleanupRootObject = null;
             try
             {
-                previewModel = CreatePartialImportPreviewModel(capture.Values, out previewAvatarRootObject, out var appliedCount);
+                previewModel = CreatePartialImportPreviewModel(
+                    capture.Values,
+                    out previewCleanupRootObject,
+                    out var appliedCount);
                 if (previewModel == null
-                    || previewAvatarRootObject == null
+                    || previewCleanupRootObject == null
                     || previewModel.targetRenderer == null
                     || appliedCount == 0)
                 {
@@ -1111,9 +1114,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     GetPartialImportPreviewWeight(previewModel),
                     capture.Values);
 
-                capture.SetPreparedObjects(previewModel, previewAvatarRootObject);
+                capture.SetPreparedObjects(previewModel, previewCleanupRootObject);
                 previewModel = null;
-                previewAvatarRootObject = null;
+                previewCleanupRootObject = null;
                 _pendingPartialImportPreviewCapture = capture;
                 _partialImportPreviewCaptureReadyTime = EditorApplication.timeSinceStartup + PreviewDebounceSeconds;
                 EditorApplication.QueuePlayerLoopUpdate();
@@ -1131,9 +1134,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     DestroyImmediate(previewModel);
                 }
 
-                if (previewAvatarRootObject != null)
+                if (previewCleanupRootObject != null)
                 {
-                    DestroyImmediate(previewAvatarRootObject);
+                    DestroyImmediate(previewCleanupRootObject);
                 }
             }
         }
@@ -1172,10 +1175,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private ExpressionEditModel CreatePartialImportPreviewModel(
             IReadOnlyList<PartialImportValue> values,
-            out GameObject previewAvatarRootObject,
+            out GameObject previewCleanupRootObject,
             out int appliedCount)
         {
-            previewAvatarRootObject = null;
+            previewCleanupRootObject = null;
             appliedCount = 0;
             if (_model == null || values == null)
             {
@@ -1183,7 +1186,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var previewModel = CloneModelForPartialImportPreview(_model);
-            if (!TryCreateOffscreenPreviewAvatar(previewModel, out previewAvatarRootObject))
+            if (!TryCreateOffscreenPreviewAvatar(previewModel, out previewCleanupRootObject))
             {
                 DestroyImmediate(previewModel);
                 return null;
@@ -1193,9 +1196,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return previewModel;
         }
 
-        private bool TryCreateOffscreenPreviewAvatar(ExpressionEditModel previewModel, out GameObject previewAvatarRootObject)
+        private bool TryCreateOffscreenPreviewAvatar(
+            ExpressionEditModel previewModel,
+            out GameObject previewCleanupRootObject)
         {
-            previewAvatarRootObject = null;
+            previewCleanupRootObject = null;
             if (_model == null
                 || _model.avatarRootObject == null
                 || _model.targetRenderer == null
@@ -1205,7 +1210,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var rendererPath = MiscUtil.GetPathInHierarchy(_model.targetRenderer.gameObject, _model.avatarRootObject);
-            previewAvatarRootObject = Instantiate(_model.avatarRootObject);
+            var previewAvatarRootObject = Instantiate(_model.avatarRootObject);
             previewAvatarRootObject.name = $"{_model.avatarRootObject.name} Partial Import Preview";
             previewAvatarRootObject.hideFlags = HideFlags.HideAndDontSave;
             foreach (var transform in previewAvatarRootObject.GetComponentsInChildren<Transform>(true))
@@ -1213,7 +1218,22 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 transform.gameObject.hideFlags = HideFlags.HideAndDontSave;
             }
 
-            previewAvatarRootObject.transform.position += Vector3.one * PartialImportPreviewOffscreenOffset;
+            try
+            {
+                previewCleanupRootObject = MatchPreviewAvatarTransform(
+                    previewAvatarRootObject.transform,
+                    _model.avatarRootObject.transform,
+                    Vector3.one * PartialImportPreviewOffscreenOffset);
+            }
+            catch
+            {
+                if (previewAvatarRootObject != null)
+                {
+                    DestroyImmediate(previewAvatarRootObject);
+                }
+
+                throw;
+            }
 
             var targetTransform = string.IsNullOrEmpty(rendererPath)
                 ? previewAvatarRootObject.transform
@@ -1223,14 +1243,107 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 : null;
             if (previewRenderer == null || previewRenderer.sharedMesh == null)
             {
-                DestroyImmediate(previewAvatarRootObject);
-                previewAvatarRootObject = null;
+                DestroyImmediate(previewCleanupRootObject);
+                previewCleanupRootObject = null;
                 return false;
             }
 
             previewModel.avatarRootObject = previewAvatarRootObject;
             previewModel.targetRenderer = previewRenderer;
             return true;
+        }
+
+        /// <summary>
+        /// 複製元の親階層を Transform だけの一時階層として再現し、
+        /// プレビュー用のワールドオフセットだけを加える。
+        /// </summary>
+        /// <returns>プレビュー階層をまとめて破棄するためのルート。</returns>
+        internal static GameObject MatchPreviewAvatarTransform(
+            Transform previewTransform,
+            Transform sourceTransform,
+            Vector3 worldOffset)
+        {
+            if (previewTransform == null)
+            {
+                throw new ArgumentNullException(nameof(previewTransform));
+            }
+
+            if (sourceTransform == null)
+            {
+                throw new ArgumentNullException(nameof(sourceTransform));
+            }
+
+            var previewParent = CreatePreviewParentChain(sourceTransform.parent, out var previewHierarchyRootObject);
+            try
+            {
+                previewTransform.SetParent(previewParent, false);
+                previewTransform.localPosition = sourceTransform.localPosition;
+                previewTransform.localRotation = sourceTransform.localRotation;
+                previewTransform.localScale = sourceTransform.localScale;
+                previewTransform.position += worldOffset;
+                return previewHierarchyRootObject != null
+                    ? previewHierarchyRootObject
+                    : previewTransform.gameObject;
+            }
+            catch
+            {
+                if (previewHierarchyRootObject != null)
+                {
+                    DestroyImmediate(previewHierarchyRootObject);
+                }
+
+                throw;
+            }
+        }
+
+        private static Transform CreatePreviewParentChain(
+            Transform sourceParent,
+            out GameObject previewHierarchyRootObject)
+        {
+            previewHierarchyRootObject = null;
+            if (sourceParent == null)
+            {
+                return null;
+            }
+
+            var sourceAncestors = new Stack<Transform>();
+            for (var sourceAncestor = sourceParent; sourceAncestor != null; sourceAncestor = sourceAncestor.parent)
+            {
+                sourceAncestors.Push(sourceAncestor);
+            }
+
+            Transform previewParent = null;
+            try
+            {
+                while (sourceAncestors.Count > 0)
+                {
+                    var sourceAncestor = sourceAncestors.Pop();
+                    var previewParentObject = new GameObject($"{sourceAncestor.name} Partial Import Preview Transform")
+                    {
+                        hideFlags = HideFlags.HideAndDontSave,
+                    };
+                    previewParentObject.transform.SetParent(previewParent, false);
+                    previewParentObject.transform.localPosition = sourceAncestor.localPosition;
+                    previewParentObject.transform.localRotation = sourceAncestor.localRotation;
+                    previewParentObject.transform.localScale = sourceAncestor.localScale;
+                    previewHierarchyRootObject = previewHierarchyRootObject != null
+                        ? previewHierarchyRootObject
+                        : previewParentObject;
+                    previewParent = previewParentObject.transform;
+                }
+
+                return previewParent;
+            }
+            catch
+            {
+                if (previewHierarchyRootObject != null)
+                {
+                    DestroyImmediate(previewHierarchyRootObject);
+                    previewHierarchyRootObject = null;
+                }
+
+                throw;
+            }
         }
 
         private void ApplyPartialImportPreviewModelWeights(
@@ -1366,14 +1479,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
             public int RequestVersion { get; }
             public IReadOnlyList<PartialImportValue> Values { get; }
             public ExpressionEditModel PreviewModel { get; private set; }
-            public GameObject PreviewAvatarRootObject { get; private set; }
-            public bool IsPrepared => PreviewModel != null && PreviewAvatarRootObject != null;
+            public GameObject PreviewCleanupRootObject { get; private set; }
+            public bool IsPrepared => PreviewModel != null && PreviewCleanupRootObject != null;
 
-            public void SetPreparedObjects(ExpressionEditModel previewModel, GameObject previewAvatarRootObject)
+            public void SetPreparedObjects(ExpressionEditModel previewModel, GameObject previewCleanupRootObject)
             {
                 DisposePreparedObjects();
                 PreviewModel = previewModel;
-                PreviewAvatarRootObject = previewAvatarRootObject;
+                PreviewCleanupRootObject = previewCleanupRootObject;
             }
 
             public void DisposePreparedObjects()
@@ -1384,10 +1497,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     PreviewModel = null;
                 }
 
-                if (PreviewAvatarRootObject != null)
+                if (PreviewCleanupRootObject != null)
                 {
-                    UnityEngine.Object.DestroyImmediate(PreviewAvatarRootObject);
-                    PreviewAvatarRootObject = null;
+                    UnityEngine.Object.DestroyImmediate(PreviewCleanupRootObject);
+                    PreviewCleanupRootObject = null;
                 }
             }
         }
@@ -2447,7 +2560,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            ThumbnailCaptureService.SaveSettings(_model.avatarRootObject, settings);
+            ThumbnailCaptureService.SaveSettings(_model, settings);
 
             BeginPendingThumbnailCapture(PendingThumbnailCaptureKind.Save, settings, filePath, true);
         }
