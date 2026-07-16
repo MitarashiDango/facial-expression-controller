@@ -36,7 +36,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private readonly Button _assignButton;
         private readonly List<string> _expressionChoices = new List<string>();
 
-        private GameObject _avatarRootObject;
+        private ExpressionEditModel _model;
+        private float _distanceReferenceSize;
         private Texture2D _capturedTexture;
         private Texture2D _previewTexture;
         private string _capturedAssetPath = "";
@@ -84,7 +85,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
             };
             _autoFrameButton.AddToClassList("thumbnail-button");
 
-            _distanceField = new FloatField("距離");
+            _distanceField = new FloatField("距離")
+            {
+                tooltip = "顔サイズに対する比率を保ったまま、アバターの Scale に合わせて補正されます",
+            };
             ConfigureField(_distanceField);
             _distanceField.RegisterValueChangedCallback(_ => SaveSettings());
             settingsContainer.Add(_distanceField);
@@ -232,7 +236,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             {
                 return new ThumbnailCaptureSettings
                 {
-                    distance = Mathf.Max(0.01f, _distanceField.value),
+                    distance = Mathf.Max(Mathf.Epsilon, _distanceField.value),
+                    distanceReferenceSize = _distanceReferenceSize,
                     eulerAngles = _angleField.value,
                     offset = _offsetField.value,
                     backgroundMode = _backgroundModeField.value == SolidColorLabel
@@ -245,10 +250,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         public void SetModel(ExpressionEditModel model)
         {
-            _avatarRootObject = model != null ? model.avatarRootObject : null;
+            _model = model;
             _hasModel = model != null;
             ClearPreviewTexture();
-            SetSettingsWithoutNotify(ThumbnailCaptureService.LoadSettings(_avatarRootObject));
+            SetSettingsWithoutNotify(ThumbnailCaptureService.LoadSettings(_model));
             UpdateButtonStates();
         }
 
@@ -268,7 +273,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             SetSettingsWithoutNotify(settings);
             if (save)
             {
-                ThumbnailCaptureService.SaveSettings(_avatarRootObject, settings);
+                ThumbnailCaptureService.SaveSettings(_model, settings);
             }
         }
 
@@ -341,7 +346,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private void SetSettingsWithoutNotify(ThumbnailCaptureSettings settings)
         {
             _ignoreChange = true;
-            _distanceField.SetValueWithoutNotify(Mathf.Max(0.01f, settings.distance));
+            _distanceReferenceSize = settings.distanceReferenceSize;
+            _distanceField.SetValueWithoutNotify(Mathf.Max(Mathf.Epsilon, settings.distance));
             _angleField.SetValueWithoutNotify(settings.eulerAngles);
             _offsetField.SetValueWithoutNotify(settings.offset);
             _backgroundModeField.SetValueWithoutNotify(settings.backgroundMode == ThumbnailBackgroundMode.SolidColor
@@ -359,7 +365,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            ThumbnailCaptureService.SaveSettings(_avatarRootObject, Settings);
+            ThumbnailCaptureService.SaveSettings(_model, Settings);
         }
 
         private void RefreshExpressionChoices()

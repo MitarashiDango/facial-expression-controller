@@ -15,7 +15,18 @@ namespace MitarashiDango.FacialExpressionController.Editor
     [Serializable]
     public struct ThumbnailCaptureSettings
     {
+        /// <summary>
+        /// 撮影設定を作成した時点のワールド距離。
+        /// Scale 変更後は distanceReferenceSize との比率を現在の顔サイズへ換算して使用する。
+        /// </summary>
         public float distance;
+
+        /// <summary>
+        /// distance を設定した時点の顔幅または顔高。Scale 変更時の距離換算に使用する。
+        /// </summary>
+        [NonSerialized]
+        public float distanceReferenceSize;
+
         public Vector3 eulerAngles;
         public Vector3 offset;
         public ThumbnailBackgroundMode backgroundMode;
@@ -32,6 +43,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private const float FieldOfView = 30f;
         private const float AutoFrameMargin = 1.18f;
         private const float HeadBoneWeightThreshold = 0.05f;
+        private const float DefaultDistanceRatio = 2.5f;
+        private const float FallbackFaceReferenceRatio = 0.26f;
+        private const float MinimumDistanceRatio = 0.01f;
+        private const float FrontVertexDepthRatio = 0.35f;
+        private const float NumericalEpsilon = 0.000001f;
+        private const int DistanceRatioSettingsVersion = 2;
+        private const int CurrentSettingsVersion = 3;
         private const string EditorPrefsPrefix = "MitarashiDango.FacialExpressionController.ThumbnailCapture.";
 
         /// <summary>
@@ -41,22 +59,79 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             var defaults = GetDefaultSettings(avatarRootObject);
             var key = GetPrefsKey(avatarRootObject);
-            if (string.IsNullOrEmpty(key))
+            if (string.IsNullOrEmpty(key) || !HasStoredSettings(key))
             {
                 return defaults;
             }
 
+            return LoadStoredSettings(key, defaults, defaults.distanceReferenceSize);
+        }
+
+        /// <summary>
+        /// アバターと対象 Renderer 単位で保存された撮影設定を読み込む。
+        /// 保存距離は顔サイズに対する比率から現在のワールド距離へ復元する。
+        /// </summary>
+        public static ThumbnailCaptureSettings LoadSettings(ExpressionEditModel model)
+        {
+            var defaults = GetDefaultSettings(model);
+            if (model == null || model.avatarRootObject == null || model.targetRenderer == null)
+            {
+                return defaults;
+            }
+
+            var key = GetPrefsKey(model);
+            var sourceKey = HasStoredSettings(key)
+                ? key
+                : GetPrefsKey(model.avatarRootObject);
+            if (string.IsNullOrEmpty(sourceKey) || !HasStoredSettings(sourceKey))
+            {
+                return defaults;
+            }
+
+            var settings = LoadStoredSettings(sourceKey, defaults, defaults.distanceReferenceSize);
+            var storedVersion = EditorPrefs.GetInt(sourceKey + ".version", 1);
+            if (sourceKey != key || storedVersion < CurrentSettingsVersion)
+            {
+                SaveSettings(model, settings);
+            }
+
+            return settings;
+        }
+
+        private static ThumbnailCaptureSettings LoadStoredSettings(
+            string key,
+            ThumbnailCaptureSettings defaults,
+            float currentReferenceSize)
+        {
+            var storedVersion = EditorPrefs.GetInt(key + ".version", 1);
+            var distance = EditorPrefs.GetFloat(key + ".distance", defaults.distance);
+            if (storedVersion >= DistanceRatioSettingsVersion && EditorPrefs.HasKey(key + ".distanceRatio"))
+            {
+                var ratio = EditorPrefs.GetFloat(
+                    key + ".distanceRatio",
+                    defaults.distance / Mathf.Max(defaults.distanceReferenceSize, NumericalEpsilon));
+                ratio = IsFinitePositive(ratio) ? ratio : DefaultDistanceRatio;
+                distance = Mathf.Max(MinimumDistanceRatio, ratio) * currentReferenceSize;
+            }
+
+            distance = IsFinitePositive(distance) ? distance : defaults.distance;
+
             return new ThumbnailCaptureSettings
             {
-                distance = EditorPrefs.GetFloat(key + ".distance", defaults.distance),
+                distance = Mathf.Max(GetMinimumWorldDistance(currentReferenceSize), distance),
+                distanceReferenceSize = currentReferenceSize,
                 eulerAngles = new Vector3(
                     EditorPrefs.GetFloat(key + ".angle.x", defaults.eulerAngles.x),
                     EditorPrefs.GetFloat(key + ".angle.y", defaults.eulerAngles.y),
                     EditorPrefs.GetFloat(key + ".angle.z", defaults.eulerAngles.z)),
-                offset = new Vector3(
-                    EditorPrefs.GetFloat(key + ".offset.x", defaults.offset.x),
-                    EditorPrefs.GetFloat(key + ".offset.y", defaults.offset.y),
-                    EditorPrefs.GetFloat(key + ".offset.z", defaults.offset.z)),
+                // version 2 以前の自動調整値には、ボーン付きメッシュの Scale を重複適用した
+                // 注視点から算出されたオフセットが保存されている可能性があるため引き継がない。
+                offset = storedVersion >= CurrentSettingsVersion
+                    ? new Vector3(
+                        EditorPrefs.GetFloat(key + ".offset.x", defaults.offset.x),
+                        EditorPrefs.GetFloat(key + ".offset.y", defaults.offset.y),
+                        EditorPrefs.GetFloat(key + ".offset.z", defaults.offset.z))
+                    : defaults.offset,
                 backgroundMode = (ThumbnailBackgroundMode)EditorPrefs.GetInt(key + ".backgroundMode", (int)defaults.backgroundMode),
                 backgroundColor = new Color(
                     EditorPrefs.GetFloat(key + ".background.r", defaults.backgroundColor.r),
@@ -77,7 +152,43 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            EditorPrefs.SetFloat(key + ".distance", Mathf.Max(0.01f, settings.distance));
+            EditorPrefs.SetInt(key + ".version", CurrentSettingsVersion);
+            EditorPrefs.DeleteKey(key + ".distanceRatio");
+            EditorPrefs.SetFloat(key + ".distance", Mathf.Max(NumericalEpsilon, settings.distance));
+            SaveCommonSettings(key, settings);
+        }
+
+        /// <summary>
+        /// アバターと対象 Renderer 単位で撮影設定を保存する。
+        /// 距離は設定作成時の顔サイズに対する比率として永続化する。
+        /// </summary>
+        public static void SaveSettings(ExpressionEditModel model, ThumbnailCaptureSettings settings)
+        {
+            var key = GetPrefsKey(model);
+            if (string.IsNullOrEmpty(key))
+            {
+                return;
+            }
+
+            var currentReferenceSize = GetFramingReferenceSize(model);
+            var settingsReferenceSize = IsFinitePositive(settings.distanceReferenceSize)
+                ? settings.distanceReferenceSize
+                : currentReferenceSize;
+            var settingsDistance = IsFinitePositive(settings.distance)
+                ? settings.distance
+                : currentReferenceSize * DefaultDistanceRatio;
+            var distanceRatio = Mathf.Max(
+                MinimumDistanceRatio,
+                settingsDistance / Mathf.Max(settingsReferenceSize, NumericalEpsilon));
+
+            EditorPrefs.SetInt(key + ".version", CurrentSettingsVersion);
+            EditorPrefs.SetFloat(key + ".distanceRatio", distanceRatio);
+            EditorPrefs.SetFloat(key + ".distance", distanceRatio * currentReferenceSize);
+            SaveCommonSettings(key, settings);
+        }
+
+        private static void SaveCommonSettings(string key, ThumbnailCaptureSettings settings)
+        {
             EditorPrefs.SetFloat(key + ".angle.x", settings.eulerAngles.x);
             EditorPrefs.SetFloat(key + ".angle.y", settings.eulerAngles.y);
             EditorPrefs.SetFloat(key + ".angle.z", settings.eulerAngles.z);
@@ -124,7 +235,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         }
 
         /// <summary>
-        /// Head ボーンと頭部周辺 Bounds から撮影設定を自動計算する。
+        /// 対象 Renderer の顔領域と正面側頂点から撮影設定を自動計算する。
         /// </summary>
         public static bool TryCalculateAutoSettings(
             ExpressionEditModel model,
@@ -141,23 +252,19 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return false;
             }
 
-            var avatarTransform = model.avatarRootObject.transform;
-            var baseFocus = GetBaseFocusPoint(model);
-            var focus = baseFocus;
-            if (TryCalculateHeadBounds(model, out var headBounds))
+            if (!TryCalculateFaceFraming(model, out var faceBounds, out var focus, out var referenceSize))
             {
-                focus = headBounds.center;
-            }
-            else
-            {
-                headBounds = new Bounds(baseFocus, Vector3.one * GetApproximateHeadRadius(model));
-                message = "頭部 Bounds を特定できなかったため、Head ボーン位置から概算しました。";
+                message = "対象 Renderer から顔の撮影範囲を計算できませんでした。";
+                return false;
             }
 
+            var avatarTransform = model.avatarRootObject.transform;
+            var baseFocus = GetBaseFocusPoint(model);
             var eulerAngles = Vector3.zero;
             calculatedSettings = new ThumbnailCaptureSettings
             {
-                distance = CalculateDistanceToFitBounds(model, focus, headBounds, eulerAngles),
+                distance = CalculateDistanceToFitBounds(model, focus, faceBounds, eulerAngles, referenceSize),
+                distanceReferenceSize = referenceSize,
                 eulerAngles = eulerAngles,
                 offset = avatarTransform.InverseTransformVector(focus - baseFocus),
                 backgroundMode = currentSettings.backgroundMode,
@@ -199,7 +306,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             var avatarTransform = model.avatarRootObject.transform;
             var focus = GetFocusPoint(model, settings.offset);
-            var distance = Mathf.Max(0.01f, settings.distance);
+            var referenceSize = GetFramingReferenceSize(model);
+            var distance = ResolveWorldDistance(settings, referenceSize);
             var orbitRotation = avatarTransform.rotation * Quaternion.Euler(settings.eulerAngles);
             var cameraPosition = focus + orbitRotation * Vector3.forward * distance;
             var viewDirection = focus - cameraPosition;
@@ -212,8 +320,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 : settings.backgroundColor;
             camera.orthographic = false;
             camera.fieldOfView = FieldOfView;
-            camera.nearClipPlane = 0.01f;
-            camera.farClipPlane = Mathf.Max(10f, distance + GetRendererExtent(model.targetRenderer) * 4f);
+            camera.nearClipPlane = Mathf.Max(referenceSize * MinimumDistanceRatio * 0.1f, NumericalEpsilon);
+            camera.farClipPlane = Mathf.Max(
+                camera.nearClipPlane * 2f,
+                distance + Mathf.Max(referenceSize, GetRendererExtent(model.targetRenderer)) * 4f);
             camera.depth = -100f;
             camera.allowHDR = false;
             camera.enabled = false;
@@ -282,9 +392,30 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private static ThumbnailCaptureSettings GetDefaultSettings(GameObject avatarRootObject)
         {
+            var referenceSize = GetAvatarWorldUnitScale(avatarRootObject) * FallbackFaceReferenceRatio;
             return new ThumbnailCaptureSettings
             {
                 distance = GetDefaultDistance(avatarRootObject),
+                distanceReferenceSize = referenceSize,
+                eulerAngles = Vector3.zero,
+                offset = new Vector3(0f, -0.02f, 0f),
+                backgroundMode = ThumbnailBackgroundMode.Transparent,
+                backgroundColor = new Color(0.2f, 0.2f, 0.2f, 1f),
+            };
+        }
+
+        private static ThumbnailCaptureSettings GetDefaultSettings(ExpressionEditModel model)
+        {
+            if (model == null || model.avatarRootObject == null || model.targetRenderer == null)
+            {
+                return GetDefaultSettings(model != null ? model.avatarRootObject : null);
+            }
+
+            var referenceSize = GetFramingReferenceSize(model);
+            return new ThumbnailCaptureSettings
+            {
+                distance = referenceSize * DefaultDistanceRatio,
+                distanceReferenceSize = referenceSize,
                 eulerAngles = Vector3.zero,
                 offset = new Vector3(0f, -0.02f, 0f),
                 backgroundMode = ThumbnailBackgroundMode.Transparent,
@@ -294,15 +425,17 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private static float GetDefaultDistance(GameObject avatarRootObject)
         {
+            var avatarUnitScale = GetAvatarWorldUnitScale(avatarRootObject);
+            var fallbackReferenceSize = avatarUnitScale * FallbackFaceReferenceRatio;
             if (avatarRootObject == null)
             {
-                return 0.65f;
+                return fallbackReferenceSize * DefaultDistanceRatio;
             }
 
             var renderers = avatarRootObject.GetComponentsInChildren<Renderer>(true);
             if (renderers.Length == 0)
             {
-                return 0.65f;
+                return fallbackReferenceSize * DefaultDistanceRatio;
             }
 
             var bounds = renderers[0].bounds;
@@ -311,60 +444,129 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 bounds.Encapsulate(renderers[i].bounds);
             }
 
-            return Mathf.Clamp(bounds.size.y * 0.18f, 0.45f, 0.9f);
+            return Mathf.Max(GetMinimumWorldDistance(fallbackReferenceSize), bounds.size.y * 0.18f);
         }
 
-        private static bool TryCalculateHeadBounds(ExpressionEditModel model, out Bounds bounds)
+        /// <summary>
+        /// 対象 Renderer だけを使い、顔として扱う頂点範囲と正面側の注視点を計算する。
+        /// </summary>
+        internal static bool TryCalculateFaceFraming(
+            ExpressionEditModel model,
+            out Bounds bounds,
+            out Vector3 focus,
+            out float referenceSize)
         {
             bounds = default;
-
-            var head = GetHeadTransform(model.avatarRootObject);
-            var hasBounds = false;
-            if (head != null)
-            {
-                foreach (var renderer in model.avatarRootObject.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-                {
-                    if (TryCalculateHeadBoneWeightedBounds(renderer, head, out var rendererBounds))
-                    {
-                        Encapsulate(ref bounds, rendererBounds, ref hasBounds);
-                    }
-                }
-
-            }
-
-            if (hasBounds)
-            {
-                return true;
-            }
-
-            return head != null && TryCalculateProximityHeadBounds(model, head.position, out bounds);
-        }
-
-        private static bool TryCalculateHeadBoneWeightedBounds(SkinnedMeshRenderer renderer, Transform head, out Bounds bounds)
-        {
-            bounds = default;
-            if (renderer == null || renderer.sharedMesh == null || renderer.bones == null || renderer.bones.Length == 0)
+            focus = default;
+            referenceSize = 0f;
+            if (model == null
+                || model.avatarRootObject == null
+                || model.targetRenderer == null
+                || model.targetRenderer.sharedMesh == null)
             {
                 return false;
+            }
+
+            var head = GetHeadTransform(model.avatarRootObject);
+            if (!TryCollectFaceWorldVertices(model, head, out var worldVertices))
+            {
+                return false;
+            }
+
+            var hasBounds = false;
+            foreach (var worldVertex in worldVertices)
+            {
+                Encapsulate(ref bounds, worldVertex, ref hasBounds);
+            }
+
+            if (!hasBounds)
+            {
+                return false;
+            }
+
+            focus = CalculateFrontSurfaceFocus(worldVertices, model.avatarRootObject.transform);
+            referenceSize = CalculateProjectedReferenceSize(worldVertices, model.avatarRootObject.transform, bounds);
+            return IsFinitePositive(referenceSize);
+        }
+
+        private static bool TryCollectFaceWorldVertices(
+            ExpressionEditModel model,
+            Transform head,
+            out List<Vector3> selectedWorldVertices)
+        {
+            selectedWorldVertices = new List<Vector3>();
+            var renderer = model.targetRenderer;
+            if (renderer == null || renderer.sharedMesh == null || renderer.bones == null || renderer.bones.Length == 0)
+            {
+                return TryCollectAllWorldVertices(renderer, selectedWorldVertices);
             }
 
             var headBoneIndices = new HashSet<int>();
             for (var i = 0; i < renderer.bones.Length; i++)
             {
                 var bone = renderer.bones[i];
-                if (bone == head)
+                if (head != null && bone != null && (bone == head || bone.IsChildOf(head)))
                 {
                     headBoneIndices.Add(i);
                 }
             }
 
-            if (headBoneIndices.Count == 0)
-            {
-                return false;
-            }
-
             var sourceMesh = renderer.sharedMesh;
-            if (sourceMesh.boneWeights == null || sourceMesh.boneWeights.Length != sourceMesh.vertexCount)
+            var bakedMesh = new Mesh
+            {
+                hideFlags = HideFlags.HideAndDontSave,
+            };
+
+            try
+            {
+                renderer.BakeMesh(bakedMesh, true);
+                var bakedMeshToWorldMatrix = CreateBakeMeshUseScaleToWorldMatrix(renderer);
+                var vertices = bakedMesh.vertices;
+                var boneWeights = sourceMesh.boneWeights;
+                var allWorldVertices = new List<Vector3>(vertices.Length);
+                for (var i = 0; i < vertices.Length; i++)
+                {
+                    var worldVertex = bakedMeshToWorldMatrix.MultiplyPoint3x4(vertices[i]);
+                    allWorldVertices.Add(worldVertex);
+                    if (headBoneIndices.Count == 0
+                        || boneWeights == null
+                        || boneWeights.Length != vertices.Length
+                        || !UsesAnyBone(boneWeights[i], headBoneIndices, HeadBoneWeightThreshold))
+                    {
+                        continue;
+                    }
+
+                    selectedWorldVertices.Add(worldVertex);
+                }
+
+                if (selectedWorldVertices.Count > 0)
+                {
+                    return true;
+                }
+
+                if (head != null)
+                {
+                    SelectVerticesNearHead(model, head.position, allWorldVertices, selectedWorldVertices);
+                }
+
+                if (selectedWorldVertices.Count == 0)
+                {
+                    selectedWorldVertices.AddRange(allWorldVertices);
+                }
+
+                return selectedWorldVertices.Count > 0;
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(bakedMesh);
+            }
+        }
+
+        private static bool TryCollectAllWorldVertices(
+            SkinnedMeshRenderer renderer,
+            ICollection<Vector3> worldVertices)
+        {
+            if (renderer == null || renderer.sharedMesh == null)
             {
                 return false;
             }
@@ -376,21 +578,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             try
             {
-                renderer.BakeMesh(bakedMesh);
-                var vertices = bakedMesh.vertices;
-                var boneWeights = sourceMesh.boneWeights;
-                var hasBounds = false;
-                for (var i = 0; i < vertices.Length && i < boneWeights.Length; i++)
+                renderer.BakeMesh(bakedMesh, true);
+                var bakedMeshToWorldMatrix = CreateBakeMeshUseScaleToWorldMatrix(renderer);
+                foreach (var vertex in bakedMesh.vertices)
                 {
-                    if (!UsesAnyBone(boneWeights[i], headBoneIndices, HeadBoneWeightThreshold))
-                    {
-                        continue;
-                    }
-
-                    Encapsulate(ref bounds, renderer.transform.TransformPoint(vertices[i]), ref hasBounds);
+                    worldVertices.Add(bakedMeshToWorldMatrix.MultiplyPoint3x4(vertex));
                 }
 
-                return hasBounds;
+                return worldVertices.Count > 0;
             }
             finally
             {
@@ -398,64 +593,207 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
         }
 
-        private static bool TryCalculateProximityHeadBounds(ExpressionEditModel model, Vector3 headPosition, out Bounds bounds)
+        private static Matrix4x4 CreateBakeMeshUseScaleToWorldMatrix(SkinnedMeshRenderer renderer)
         {
-            bounds = default;
+            // BakeMesh(..., true) は Renderer 自身の localScale を頂点へ焼き込む。
+            // 行列側ではその分だけ除去し、アバタールートを含む親階層の Scale は保持する。
+            return renderer.localToWorldMatrix * Matrix4x4.Scale(CreateInverseScale(renderer.transform.localScale));
+        }
+
+        private static Vector3 CreateInverseScale(Vector3 scale)
+        {
+            return new Vector3(
+                Mathf.Abs(scale.x) > NumericalEpsilon ? 1f / scale.x : 0f,
+                Mathf.Abs(scale.y) > NumericalEpsilon ? 1f / scale.y : 0f,
+                Mathf.Abs(scale.z) > NumericalEpsilon ? 1f / scale.z : 0f);
+        }
+
+        private static void SelectVerticesNearHead(
+            ExpressionEditModel model,
+            Vector3 headPosition,
+            IReadOnlyList<Vector3> sourceVertices,
+            ICollection<Vector3> selectedVertices)
+        {
             var avatarTransform = model.avatarRootObject.transform;
-            var radius = GetApproximateHeadRadius(model);
+            var radius = GetApproximateHeadRadius(model, sourceVertices);
             var verticalMin = -radius * 1.25f;
             var verticalMax = radius * 1.55f;
             var lateralMax = radius * 1.45f;
-            var hasBounds = false;
 
-            foreach (var renderer in model.avatarRootObject.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            foreach (var worldVertex in sourceVertices)
             {
-                if (renderer == null || renderer.sharedMesh == null)
+                var relative = worldVertex - headPosition;
+                var vertical = Vector3.Dot(relative, avatarTransform.up);
+                var lateral = relative - avatarTransform.up * vertical;
+                if (vertical >= verticalMin && vertical <= verticalMax && lateral.magnitude <= lateralMax)
+                {
+                    selectedVertices.Add(worldVertex);
+                }
+            }
+        }
+
+        private static Vector3 CalculateFrontSurfaceFocus(
+            IReadOnlyList<Vector3> worldVertices,
+            Transform avatarTransform)
+        {
+            var right = avatarTransform.right;
+            var up = avatarTransform.up;
+            var forward = avatarTransform.forward;
+            var minDepth = float.PositiveInfinity;
+            var maxDepth = float.NegativeInfinity;
+
+            foreach (var vertex in worldVertices)
+            {
+                var depth = Vector3.Dot(vertex, forward);
+                minDepth = Mathf.Min(minDepth, depth);
+                maxDepth = Mathf.Max(maxDepth, depth);
+            }
+
+            var frontThreshold = maxDepth - (maxDepth - minDepth) * FrontVertexDepthRatio;
+            if (!TryCalculateProjectedCenter(
+                    worldVertices,
+                    right,
+                    up,
+                    forward,
+                    frontThreshold,
+                    out var projectedRight,
+                    out var projectedUp))
+            {
+                TryCalculateProjectedCenter(
+                    worldVertices,
+                    right,
+                    up,
+                    forward,
+                    float.NegativeInfinity,
+                    out projectedRight,
+                    out projectedUp);
+            }
+
+            var projectedDepth = (minDepth + maxDepth) * 0.5f;
+            return right * projectedRight + up * projectedUp + forward * projectedDepth;
+        }
+
+        private static bool TryCalculateProjectedCenter(
+            IReadOnlyList<Vector3> worldVertices,
+            Vector3 right,
+            Vector3 up,
+            Vector3 forward,
+            float minimumDepth,
+            out float projectedRight,
+            out float projectedUp)
+        {
+            projectedRight = 0f;
+            projectedUp = 0f;
+            var minRight = float.PositiveInfinity;
+            var maxRight = float.NegativeInfinity;
+            var minUp = float.PositiveInfinity;
+            var maxUp = float.NegativeInfinity;
+            var count = 0;
+
+            foreach (var vertex in worldVertices)
+            {
+                if (Vector3.Dot(vertex, forward) < minimumDepth)
                 {
                     continue;
                 }
 
-                var bakedMesh = new Mesh
-                {
-                    hideFlags = HideFlags.HideAndDontSave,
-                };
+                var rightValue = Vector3.Dot(vertex, right);
+                var upValue = Vector3.Dot(vertex, up);
+                minRight = Mathf.Min(minRight, rightValue);
+                maxRight = Mathf.Max(maxRight, rightValue);
+                minUp = Mathf.Min(minUp, upValue);
+                maxUp = Mathf.Max(maxUp, upValue);
+                count++;
+            }
 
-                try
+            if (count == 0)
+            {
+                return false;
+            }
+
+            projectedRight = (minRight + maxRight) * 0.5f;
+            projectedUp = (minUp + maxUp) * 0.5f;
+            return true;
+        }
+
+        private static float CalculateProjectedReferenceSize(
+            IReadOnlyList<Vector3> worldVertices,
+            Transform avatarTransform,
+            Bounds fallbackBounds)
+        {
+            var minRight = float.PositiveInfinity;
+            var maxRight = float.NegativeInfinity;
+            var minUp = float.PositiveInfinity;
+            var maxUp = float.NegativeInfinity;
+            foreach (var vertex in worldVertices)
+            {
+                var right = Vector3.Dot(vertex, avatarTransform.right);
+                var up = Vector3.Dot(vertex, avatarTransform.up);
+                minRight = Mathf.Min(minRight, right);
+                maxRight = Mathf.Max(maxRight, right);
+                minUp = Mathf.Min(minUp, up);
+                maxUp = Mathf.Max(maxUp, up);
+            }
+
+            var referenceSize = Mathf.Max(maxRight - minRight, maxUp - minUp);
+            if (!IsFinitePositive(referenceSize))
+            {
+                referenceSize = fallbackBounds.extents.magnitude * 2f;
+            }
+
+            return IsFinitePositive(referenceSize)
+                ? referenceSize
+                : GetAvatarWorldUnitScale(avatarTransform != null ? avatarTransform.gameObject : null)
+                    * FallbackFaceReferenceRatio;
+        }
+
+        private static float GetApproximateHeadRadius(
+            ExpressionEditModel model,
+            IReadOnlyList<Vector3> targetWorldVertices)
+        {
+            var animator = model.avatarRootObject.GetComponentInChildren<Animator>(true);
+            if (animator != null && animator.isHuman)
+            {
+                var head = animator.GetBoneTransform(HumanBodyBones.Head);
+                var neck = animator.GetBoneTransform(HumanBodyBones.Neck);
+                if (head != null && neck != null)
                 {
-                    renderer.BakeMesh(bakedMesh);
-                    foreach (var vertex in bakedMesh.vertices)
+                    var headNeckDistance = Vector3.Distance(head.position, neck.position);
+                    if (IsFinitePositive(headNeckDistance))
                     {
-                        var worldVertex = renderer.transform.TransformPoint(vertex);
-                        var relative = worldVertex - headPosition;
-                        var vertical = Vector3.Dot(relative, avatarTransform.up);
-                        var lateral = relative - avatarTransform.up * vertical;
-                        if (vertical >= verticalMin && vertical <= verticalMax && lateral.magnitude <= lateralMax)
-                        {
-                            Encapsulate(ref bounds, worldVertex, ref hasBounds);
-                        }
+                        return headNeckDistance * 1.8f;
                     }
-                }
-                finally
-                {
-                    UnityEngine.Object.DestroyImmediate(bakedMesh);
                 }
             }
 
-            return hasBounds;
+            var bounds = default(Bounds);
+            var hasBounds = false;
+            foreach (var vertex in targetWorldVertices)
+            {
+                Encapsulate(ref bounds, vertex, ref hasBounds);
+            }
+
+            var targetBasedRadius = hasBounds
+                ? Mathf.Max(bounds.size.x * 0.6f, bounds.size.y * 0.14f, bounds.size.z * 0.6f)
+                : 0f;
+            return IsFinitePositive(targetBasedRadius)
+                ? targetBasedRadius
+                : GetAvatarWorldUnitScale(model.avatarRootObject) * 0.22f;
         }
 
         private static float CalculateDistanceToFitBounds(
             ExpressionEditModel model,
             Vector3 focus,
             Bounds bounds,
-            Vector3 eulerAngles)
+            Vector3 eulerAngles,
+            float referenceSize)
         {
             var avatarTransform = model.avatarRootObject.transform;
             var orbitRotation = avatarTransform.rotation * Quaternion.Euler(eulerAngles);
             var cameraRotation = Quaternion.LookRotation(-(orbitRotation * Vector3.forward), orbitRotation * Vector3.up);
             var tanVertical = Mathf.Tan(FieldOfView * Mathf.Deg2Rad * 0.5f);
             var tanHorizontal = tanVertical;
-            var requiredDistance = 0.01f;
+            var requiredDistance = GetMinimumWorldDistance(referenceSize);
 
             foreach (var corner in GetBoundsCorners(bounds))
             {
@@ -466,7 +804,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 requiredDistance = Mathf.Max(requiredDistance, x / tanHorizontal - z, y / tanVertical - z);
             }
 
-            return Mathf.Clamp(requiredDistance, 0.05f, 10f);
+            return Mathf.Max(GetMinimumWorldDistance(referenceSize), requiredDistance);
         }
 
         private static IEnumerable<Vector3> GetBoundsCorners(Bounds bounds)
@@ -494,44 +832,80 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return animator.GetBoneTransform(HumanBodyBones.Head);
         }
 
-        private static float GetApproximateHeadRadius(ExpressionEditModel model)
+        /// <summary>
+        /// 設定作成時の顔サイズに対する距離比を、現在の Scale に合わせたワールド距離へ換算する。
+        /// </summary>
+        internal static float ResolveWorldDistance(ExpressionEditModel model, ThumbnailCaptureSettings settings)
         {
-            var avatarBounds = CalculateAvatarBounds(model.avatarRootObject);
-            var radius = avatarBounds.HasValue ? avatarBounds.Value.size.y * 0.14f : 0.22f;
-            var animator = model.avatarRootObject.GetComponentInChildren<Animator>(true);
-            if (animator != null && animator.isHuman)
+            return ResolveWorldDistance(settings, GetFramingReferenceSize(model));
+        }
+
+        private static float ResolveWorldDistance(
+            ThumbnailCaptureSettings settings,
+            float currentReferenceSize)
+        {
+            if (!IsFinitePositive(settings.distance))
             {
-                var head = animator.GetBoneTransform(HumanBodyBones.Head);
-                var neck = animator.GetBoneTransform(HumanBodyBones.Neck);
-                if (head != null && neck != null)
+                return currentReferenceSize * DefaultDistanceRatio;
+            }
+
+            if (!IsFinitePositive(settings.distanceReferenceSize))
+            {
+                return Mathf.Max(GetMinimumWorldDistance(currentReferenceSize), settings.distance);
+            }
+
+            var distanceRatio = settings.distance / settings.distanceReferenceSize;
+            return Mathf.Max(MinimumDistanceRatio, distanceRatio) * currentReferenceSize;
+        }
+
+        internal static float GetFramingReferenceSize(ExpressionEditModel model)
+        {
+            if (TryCalculateFaceFraming(model, out _, out _, out var referenceSize)
+                && IsFinitePositive(referenceSize))
+            {
+                return referenceSize;
+            }
+
+            if (model != null && model.targetRenderer != null)
+            {
+                var rendererBounds = model.targetRenderer.bounds;
+                var rendererReferenceSize = Mathf.Max(rendererBounds.size.x, rendererBounds.size.y);
+                if (IsFinitePositive(rendererReferenceSize))
                 {
-                    radius = Mathf.Max(radius, Vector3.Distance(head.position, neck.position) * 1.8f);
+                    return rendererReferenceSize;
                 }
             }
 
-            return Mathf.Clamp(radius, 0.12f, 0.42f);
+            var avatarRootObject = model != null ? model.avatarRootObject : null;
+            return GetAvatarWorldUnitScale(avatarRootObject) * FallbackFaceReferenceRatio;
         }
 
-        private static Bounds? CalculateAvatarBounds(GameObject avatarRootObject)
+        private static float GetAvatarWorldUnitScale(GameObject avatarRootObject)
         {
             if (avatarRootObject == null)
             {
-                return null;
+                return 1f;
             }
 
-            var renderers = avatarRootObject.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0)
-            {
-                return null;
-            }
+            var avatarTransform = avatarRootObject.transform;
+            var worldUnitScale = Mathf.Max(
+                avatarTransform.TransformVector(Vector3.right).magnitude,
+                avatarTransform.TransformVector(Vector3.up).magnitude,
+                avatarTransform.TransformVector(Vector3.forward).magnitude);
+            return IsFinitePositive(worldUnitScale) ? worldUnitScale : 1f;
+        }
 
-            var bounds = renderers[0].bounds;
-            for (var i = 1; i < renderers.Length; i++)
-            {
-                bounds.Encapsulate(renderers[i].bounds);
-            }
+        private static float GetMinimumWorldDistance(float referenceSize)
+        {
+            var safeReferenceSize = IsFinitePositive(referenceSize)
+                ? referenceSize
+                : FallbackFaceReferenceRatio;
+            return Mathf.Max(safeReferenceSize * MinimumDistanceRatio, NumericalEpsilon);
+        }
 
-            return bounds;
+        private static bool IsFinitePositive(float value)
+        {
+            return value > 0f && !float.IsNaN(value) && !float.IsInfinity(value);
         }
 
         private static bool UsesAnyBone(BoneWeight boneWeight, HashSet<int> boneIndices, float threshold)
@@ -540,18 +914,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 || boneWeight.weight1 >= threshold && boneIndices.Contains(boneWeight.boneIndex1)
                 || boneWeight.weight2 >= threshold && boneIndices.Contains(boneWeight.boneIndex2)
                 || boneWeight.weight3 >= threshold && boneIndices.Contains(boneWeight.boneIndex3);
-        }
-
-        private static void Encapsulate(ref Bounds bounds, Bounds value, ref bool hasBounds)
-        {
-            if (!hasBounds)
-            {
-                bounds = value;
-                hasBounds = true;
-                return;
-            }
-
-            bounds.Encapsulate(value);
         }
 
         private static void Encapsulate(ref Bounds bounds, Vector3 point, ref bool hasBounds)
@@ -598,7 +960,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return Path.Combine(projectRoot.FullName, assetPath.Replace('/', Path.DirectorySeparatorChar));
         }
 
-        private static string GetPrefsKey(GameObject avatarRootObject)
+        internal static string GetPrefsKey(GameObject avatarRootObject)
         {
             if (avatarRootObject == null)
             {
@@ -612,6 +974,27 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             return EditorPrefsPrefix + Hash128.Compute(globalId);
+        }
+
+        internal static string GetPrefsKey(ExpressionEditModel model)
+        {
+            if (model == null || model.avatarRootObject == null || model.targetRenderer == null)
+            {
+                return "";
+            }
+
+            var avatarId = GlobalObjectId.GetGlobalObjectIdSlow(model.avatarRootObject).ToString();
+            var rendererId = GlobalObjectId.GetGlobalObjectIdSlow(model.targetRenderer).ToString();
+            var rendererPath = MiscUtil.GetPathInHierarchy(
+                model.targetRenderer.gameObject,
+                model.avatarRootObject);
+            return EditorPrefsPrefix + Hash128.Compute($"{avatarId}|{rendererId}|{rendererPath}");
+        }
+
+        private static bool HasStoredSettings(string key)
+        {
+            return !string.IsNullOrEmpty(key)
+                && (EditorPrefs.HasKey(key + ".version") || EditorPrefs.HasKey(key + ".distance"));
         }
     }
 }
