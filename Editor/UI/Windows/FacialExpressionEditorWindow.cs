@@ -28,6 +28,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private const string BulkAllEditableLabel = "すべてのブレンドシェイプを編集・出力対象にする";
         private const string BulkAllExcludedLabel = "すべてのブレンドシェイプを編集・出力対象外にする";
         private const string BulkRestoreEditingStartLabel = "編集開始時点の状態に戻す";
+        internal const string ClipFieldLabel = "編集中のクリップ";
+        internal const string UnsavedLabelSuffix = "*";
+        internal const string UnsavedChangesTooltip = "未保存の変更があります";
         private static readonly List<string> FrameModeChoices = new List<string> { SingleFrameModeLabel, WeightBlendModeLabel };
         private static readonly List<string> OutputModeChoices = new List<string>
         {
@@ -50,7 +53,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private Label _sceneInfluenceFilterStatusLabel;
         private Toggle _previewToggle;
         private Button _newButton;
-        private Button _loadButton;
         private Button _saveButton;
         private Button _saveAsButton;
         private Button _resetButton;
@@ -74,7 +76,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
         [SerializeField] private ExpressionEditModel _model;
         [SerializeField] private AnimationClip _currentClip;
         [SerializeField] private AnimationClip _referenceClip;
-        [SerializeField] private string _currentAssetPath;
         [SerializeField] private ExpressionFrameMode _loadedSourceFrameMode = ExpressionFrameMode.SingleFrame;
         [SerializeField] private ExpressionEditFrame _editingFrame = ExpressionEditFrame.Start;
         [SerializeField] private BlendShapeOutputMode _outputMode = BlendShapeOutputMode.AllTargets;
@@ -98,6 +99,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private PartialImportPreviewCapture _pendingPartialImportPreviewCapture;
         private double _thumbnailCaptureReadyTime;
         private PendingThumbnailCapture _pendingThumbnailCapture;
+
+        /// <summary>
+        /// 未保存の変更を破棄して続行してよいかを確認する処理。既定では確認ダイアログを表示する。
+        /// テストでダイアログを表示せずに確認結果を差し替えるためのもので、通常の処理からは変更しない。
+        /// </summary>
+        internal Func<bool> DiscardUnsavedChangesConfirmation { get; set; } = ShowDiscardUnsavedChangesDialog;
 
         [MenuItem("Tools/Facial Expression Controller/表情アニメーションエディター")]
         public static void Open()
@@ -252,22 +259,21 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _rendererField.RegisterValueChangedCallback(evt => SetRenderer(evt.newValue as SkinnedMeshRenderer));
             targetContainer.Add(_rendererField);
 
-            _clipField = new ObjectField("編集対象アニメーションクリップ")
+            _clipField = new ObjectField(ClipFieldLabel)
             {
                 objectType = typeof(AnimationClip),
                 allowSceneObjects = false,
             };
             ConfigureTargetField(_clipField);
-            _clipField.RegisterValueChangedCallback(_ => UpdateButtonStates());
+            _clipField.RegisterValueChangedCallback(evt => OnClipFieldChanged(evt.newValue as AnimationClip));
             targetContainer.Add(_clipField);
+            UpdateUnsavedIndicator();
 
             _newButton = new Button(CreateNewSession) { text = "新規" };
-            _loadButton = new Button(LoadSelectedClip) { text = "読込" };
             _saveButton = new Button(Save) { text = "保存" };
             _saveAsButton = new Button(SaveAs) { text = "別名保存" };
             _resetButton = new Button(ResetValues) { text = "リセット" };
             toolbarContainer.Add(_newButton);
-            toolbarContainer.Add(_loadButton);
             toolbarContainer.Add(_saveButton);
             toolbarContainer.Add(_saveAsButton);
             toolbarContainer.Add(_resetButton);
@@ -543,12 +549,26 @@ namespace MitarashiDango.FacialExpressionController.Editor
             ShowMessage(hasUnsavedChanges ? "未保存の編集を復元しました。" : "", HelpBoxMessageType.Info);
         }
 
+        /// <summary>
+        /// 編集対象のアバターを設定する。アバターが変わる場合は新規セッションとして開き直し、編集中のクリップを外す。
+        /// 編集中のアバターを再指定した場合は、現在のセッションをそのまま維持する。
+        /// ただし対象 Skinned Mesh Renderer が削除されている場合は、Renderer を解決し直して開き直す。
+        /// </summary>
         private void SetAvatar(VRCAvatarDescriptor descriptor)
         {
             var currentDescriptor = _model != null && _model.avatarRootObject != null
                 ? _model.avatarRootObject.GetComponent<VRCAvatarDescriptor>()
                 : null;
-            if (currentDescriptor != descriptor && !TryDiscardUnsavedChanges())
+            if (_model != null
+                && descriptor != null
+                && currentDescriptor == descriptor
+                && _model.targetRenderer != null)
+            {
+                _avatarField?.SetValueWithoutNotify(descriptor);
+                return;
+            }
+
+            if (!TryDiscardUnsavedChanges())
             {
                 _avatarField.SetValueWithoutNotify(currentDescriptor);
                 return;
@@ -566,7 +586,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 resolvedRenderer = descriptor.GetComponentsInChildren<SkinnedMeshRenderer>(true).FirstOrDefault(smr => smr.sharedMesh != null);
             }
 
-            SetModel(avatarRootObject, resolvedRenderer, null);
+            SetModel(avatarRootObject, resolvedRenderer);
 
             if (descriptor == null)
             {
@@ -582,11 +602,24 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
         }
 
+        /// <summary>
+        /// 編集対象の Skinned Mesh Renderer を設定する。Renderer が変わる場合は新規セッションとして開き直し、編集中のクリップを外す。
+        /// 編集中の Renderer を再指定した場合は、現在のセッションをそのまま維持する。
+        /// </summary>
         private void SetRenderer(SkinnedMeshRenderer renderer)
         {
             var avatarDescriptor = _avatarField != null ? _avatarField.value as VRCAvatarDescriptor : null;
             var rendererAvatarRootObject = renderer != null ? MiscUtil.GetAvatarRoot(renderer.transform) : null;
             var avatarRootObject = avatarDescriptor != null ? avatarDescriptor.gameObject : rendererAvatarRootObject;
+            if (_model != null
+                && renderer != null
+                && _model.targetRenderer == renderer
+                && _model.avatarRootObject == avatarRootObject)
+            {
+                _rendererField?.SetValueWithoutNotify(renderer);
+                return;
+            }
+
             if (renderer != null && !ValidateRendererForAvatar(renderer, avatarRootObject))
             {
                 _rendererField.SetValueWithoutNotify(_model != null ? _model.targetRenderer : null);
@@ -606,7 +639,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 avatarRootObject = rendererAvatarRootObject;
             }
 
-            SetModel(avatarRootObject, renderer, null);
+            SetModel(avatarRootObject, renderer);
             if (avatarRootObject != null && renderer != null)
             {
                 ShowMessage("", HelpBoxMessageType.Info);
@@ -615,29 +648,57 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void CreateNewSession()
         {
+            TryCreateNewSession();
+        }
+
+        /// <summary>
+        /// 現在のアバターと Skinned Mesh Renderer で新規セッションを開始する。
+        /// </summary>
+        /// <returns>開始した場合は true。未保存の変更の確認がキャンセルされた場合は false。</returns>
+        private bool TryCreateNewSession()
+        {
             if (!TryDiscardUnsavedChanges())
             {
-                return;
+                return false;
             }
 
             var avatarDescriptor = _avatarField.value as VRCAvatarDescriptor;
             var renderer = _rendererField.value as SkinnedMeshRenderer;
             var avatarRootObject = avatarDescriptor != null ? avatarDescriptor.gameObject : null;
 
-            SetModel(avatarRootObject, renderer, null);
-            _currentClip = null;
-            _currentAssetPath = null;
+            SetModel(avatarRootObject, renderer);
             SetUnsavedChanges(false);
             ShowMessage("新規セッションを開始しました。", HelpBoxMessageType.Info);
+            return true;
         }
 
-        private void LoadSelectedClip()
+        /// <summary>
+        /// クリップ欄の変更を受けて、指定されたクリップを読み込む。欄を空にした場合は新規セッションを開始する。
+        /// 実行しなかった場合は、欄を編集中のクリップへ戻す。
+        /// </summary>
+        private void OnClipFieldChanged(AnimationClip clip)
         {
-            var clip = _clipField.value as AnimationClip;
+            var applied = clip != null
+                ? TryLoadClip(clip)
+                : TryCreateNewSession();
+            if (!applied)
+            {
+                _clipField?.SetValueWithoutNotify(_currentClip);
+            }
+        }
+
+        /// <summary>
+        /// 指定した AnimationClip を読み込み、編集中のクリップにする。
+        /// クリップにないブレンドシェイプはプレビュー適用前の Skinned Mesh Renderer の値で読み込むため、先にプレビューを止める。
+        /// 読み込みに失敗した場合や確認がキャンセルされた場合は、現在のセッションをそのまま残してプレビューを再開する。
+        /// </summary>
+        /// <returns>読み込んだ場合は true。対象が未設定、確認がキャンセルされた、または読み込みに失敗した場合は false。</returns>
+        private bool TryLoadClip(AnimationClip clip)
+        {
             if (clip == null)
             {
                 ShowMessage("読み込む AnimationClip を指定してください。", HelpBoxMessageType.Warning);
-                return;
+                return false;
             }
 
             var avatarDescriptor = _avatarField.value as VRCAvatarDescriptor;
@@ -646,17 +707,32 @@ namespace MitarashiDango.FacialExpressionController.Editor
             if (avatarRootObject == null || renderer == null)
             {
                 ShowMessage("アバターと対象 Skinned Mesh Renderer を指定してください。", HelpBoxMessageType.Warning);
-                return;
+                return false;
+            }
+
+            StopPreview();
+
+            ExpressionEditModel loadedModel;
+            try
+            {
+                loadedModel = ExpressionClipIO.Load(clip, avatarRootObject, renderer);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                RequestPreview();
+                ShowMessage("クリップの読み込みに失敗しました。Console を確認してください。", HelpBoxMessageType.Error);
+                return false;
             }
 
             if (!TryDiscardUnsavedChanges())
             {
-                return;
+                DestroyImmediate(loadedModel);
+                RequestPreview();
+                return false;
             }
 
-            SetModel(avatarRootObject, renderer, clip);
-            _currentClip = clip;
-            _currentAssetPath = AssetDatabase.GetAssetPath(clip);
+            SetModel(avatarRootObject, renderer, loadedModel, clip);
             SetUnsavedChanges(false);
 
             if (_model != null && _model.hasIntermediateKeys)
@@ -671,9 +747,20 @@ namespace MitarashiDango.FacialExpressionController.Editor
             {
                 ShowMessage("クリップを読み込みました。", HelpBoxMessageType.Info);
             }
+
+            return true;
         }
 
-        private void SetModel(GameObject avatarRootObject, SkinnedMeshRenderer renderer, AnimationClip sourceClip)
+        /// <summary>
+        /// 編集モデルを差し替える。<paramref name="loadedModel"/> を渡した場合はそれを使い、
+        /// 編集中のクリップとクリップ欄を <paramref name="loadedClip"/> に合わせる。
+        /// 渡さない場合は新規モデルを作成し、編集中のクリップとクリップ欄を空にする。
+        /// </summary>
+        private void SetModel(
+            GameObject avatarRootObject,
+            SkinnedMeshRenderer renderer,
+            ExpressionEditModel loadedModel = null,
+            AnimationClip loadedClip = null)
         {
             CancelPendingThumbnailCapture();
             InvalidatePartialImportPreview();
@@ -685,10 +772,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             DestroyModel();
 
-            if (avatarRootObject != null && renderer != null)
+            if (loadedModel != null || (avatarRootObject != null && renderer != null))
             {
-                _model = sourceClip != null
-                    ? ExpressionClipIO.Load(sourceClip, avatarRootObject, renderer)
+                _model = loadedModel != null
+                    ? loadedModel
                     : ExpressionClipIO.CreateModel(avatarRootObject, renderer);
                 _loadedSourceFrameMode = _model.frameMode;
                 _editingFrame = ExpressionEditFrame.Start;
@@ -702,6 +789,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _previewWeight = 0f;
                 ResetOutputSettings();
             }
+
+            SetCurrentClip(loadedModel != null ? loadedClip : null);
 
             if (_rendererField != null && _rendererField.value != renderer)
             {
@@ -720,6 +809,52 @@ namespace MitarashiDango.FacialExpressionController.Editor
             {
                 UpdateThumbnailPreview(false);
             }
+        }
+
+        /// <summary>
+        /// 編集中のクリップを設定し、クリップ欄の表示を合わせる。
+        /// </summary>
+        private void SetCurrentClip(AnimationClip clip)
+        {
+            _currentClip = clip;
+            _clipField?.SetValueWithoutNotify(clip);
+        }
+
+        /// <summary>
+        /// 上書き保存先のパスを、編集中のクリップの現在の場所から求める。
+        /// 編集中のクリップが書き込み可能な単独の .anim アセットでない場合
+        /// （サブアセット、FBX 内のクリップ、読み取り専用パッケージ内、削除済み、未保存）は空文字を返す。
+        /// </summary>
+        private string GetOverwriteSaveAssetPath()
+        {
+            if (_currentClip == null || !AssetDatabase.IsMainAsset(_currentClip))
+            {
+                return "";
+            }
+
+            var assetPath = AssetDatabase.GetAssetPath(_currentClip);
+            return string.Equals(Path.GetExtension(assetPath), ".anim", StringComparison.OrdinalIgnoreCase)
+                && IsWritableAssetPath(assetPath)
+                ? assetPath
+                : "";
+        }
+
+        /// <summary>
+        /// 指定したアセットパスへ書き込めるかを判定する。
+        /// Assets 配下と、Embedded / Local のパッケージ内は書き込み可能とし、
+        /// それ以外のパッケージ（レジストリ・Git など Library/PackageCache 由来）内は書き込めないものとして扱う。
+        /// </summary>
+        internal static bool IsWritableAssetPath(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath))
+            {
+                return false;
+            }
+
+            var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssetPath(assetPath);
+            return packageInfo == null
+                || packageInfo.source == UnityEditor.PackageManager.PackageSource.Embedded
+                || packageInfo.source == UnityEditor.PackageManager.PackageSource.Local;
         }
 
         private void DestroyModel()
@@ -1753,7 +1888,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return false;
             }
 
-            if (string.IsNullOrEmpty(_currentAssetPath))
+            var assetPath = GetOverwriteSaveAssetPath();
+            if (string.IsNullOrEmpty(assetPath))
             {
                 return TrySaveAs();
             }
@@ -1771,7 +1907,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     _model,
                     _currentClip != null ? _currentClip.name : _model.sourceClipName,
                     outputSettings: outputSettings);
-                savedClip = ExpressionClipIO.SaveClipToAsset(clip, _currentAssetPath);
+                savedClip = ExpressionClipIO.SaveClipToAsset(clip, assetPath);
             }
             catch (Exception exception)
             {
@@ -1784,7 +1920,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 DestroyTemporaryClip(clip);
             }
 
-            _currentClip = savedClip;
+            SetCurrentClip(savedClip);
             SetUnsavedChanges(false);
             ShowMessage("保存しました。", HelpBoxMessageType.Info);
             return true;
@@ -1803,7 +1939,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var defaultName = _currentClip != null ? _currentClip.name : $"FacialExpression_{(_model.avatarRootObject != null ? _model.avatarRootObject.name : "Avatar")}";
-            var defaultDirectory = !string.IsNullOrEmpty(_currentAssetPath) ? System.IO.Path.GetDirectoryName(_currentAssetPath) : "Assets";
+            var currentClipPath = _currentClip != null ? AssetDatabase.GetAssetPath(_currentClip) : "";
+            var defaultDirectory = IsWritableAssetPath(currentClipPath) ? System.IO.Path.GetDirectoryName(currentClipPath) : "Assets";
             if (!TryValidateOutputSettingsForSave(out var outputSettings))
             {
                 return false;
@@ -1838,9 +1975,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 DestroyTemporaryClip(clip);
             }
 
-            _currentAssetPath = filePath;
-            _currentClip = savedClip;
-            _clipField.SetValueWithoutNotify(_currentClip);
+            SetCurrentClip(savedClip);
             SetUnsavedChanges(false);
             ShowMessage("保存しました。", HelpBoxMessageType.Info);
             return true;
@@ -2151,6 +2286,22 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             hasUnsavedChanges = value;
             _hasSerializedUnsavedChanges = value;
+            UpdateUnsavedIndicator();
+        }
+
+        /// <summary>
+        /// 未保存の変更があるとき、クリップ欄のラベル末尾に「*」を付け、ラベルに tooltip を設定する。
+        /// tooltip はラベル要素にだけ設定し、欄自体の tooltip には触れない。
+        /// </summary>
+        private void UpdateUnsavedIndicator()
+        {
+            if (_clipField == null)
+            {
+                return;
+            }
+
+            _clipField.label = hasUnsavedChanges ? ClipFieldLabel + UnsavedLabelSuffix : ClipFieldLabel;
+            _clipField.labelElement.tooltip = hasUnsavedChanges ? UnsavedChangesTooltip : "";
         }
 
         private bool TryDiscardUnsavedChanges()
@@ -2160,17 +2311,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return true;
             }
 
-            var discard = EditorUtility.DisplayDialog(
-                "未保存の変更",
-                "未保存の表情編集があります。変更を破棄して続行しますか？",
-                "破棄して続行",
-                "キャンセル");
+            var confirmation = DiscardUnsavedChangesConfirmation ?? ShowDiscardUnsavedChangesDialog;
+            var discard = confirmation();
             if (discard)
             {
                 SetUnsavedChanges(false);
             }
 
             return discard;
+        }
+
+        private static bool ShowDiscardUnsavedChangesDialog()
+        {
+            return EditorUtility.DisplayDialog(
+                "未保存の変更",
+                "未保存の表情編集があります。変更を破棄して続行しますか？",
+                "破棄して続行",
+                "キャンセル");
         }
 
         private bool ValidateRendererForAvatar(SkinnedMeshRenderer renderer, GameObject avatarRootObject)
@@ -2285,7 +2442,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var hasModel = _model != null;
             var canSaveOutput = hasModel
                 && (_outputMode != BlendShapeOutputMode.ReferenceClipDiff || _referenceClip != null);
-            _loadButton?.SetEnabled(_clipField != null && _clipField.value != null && hasModel);
             _saveButton?.SetEnabled(canSaveOutput);
             _saveAsButton?.SetEnabled(canSaveOutput);
             _resetButton?.SetEnabled(hasModel);
@@ -2758,6 +2914,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void OnUndoRedoPerformed()
         {
+            if (_model == null)
+            {
+                return;
+            }
+
             _blendShapeListView?.Refresh();
             _partialImportView?.Refresh();
             UpdateFrameModeControls();
