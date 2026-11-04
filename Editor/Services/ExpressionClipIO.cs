@@ -79,48 +79,56 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var model = CreateModel(avatarRootObject, targetRenderer, userExcludedBlendShapes);
-            model.hasSourceClip = true;
-            model.sourceClipName = clip.name;
-            model.sourceFrameRate = clip.frameRate;
-
-            var rendererPath = GetRendererPath(model);
-            var entryByName = model.entries
-                .GroupBy(entry => entry.name)
-                .ToDictionary(group => group.Key, group => group.First());
-            var targetBlendShapeKeyTimes = new List<float>();
-            var targetBlendShapeCurves = new List<TargetBlendShapeCurve>();
-
-            foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+            try
             {
-                var curve = AnimationUtility.GetEditorCurve(clip, binding);
-                if (TryGetTargetBlendShapeEntry(binding, rendererPath, entryByName, out var entry))
+                model.hasSourceClip = true;
+                model.sourceClipName = clip.name;
+                model.sourceFrameRate = clip.frameRate;
+
+                var rendererPath = GetRendererPath(model);
+                var entryByName = model.entries
+                    .GroupBy(entry => entry.name)
+                    .ToDictionary(group => group.Key, group => group.First());
+                var targetBlendShapeKeyTimes = new List<float>();
+                var targetBlendShapeCurves = new List<TargetBlendShapeCurve>();
+
+                foreach (var binding in AnimationUtility.GetCurveBindings(clip))
                 {
-                    AddKeyTimes(targetBlendShapeKeyTimes, curve);
-                    entry.hasSourceCurve = true;
-                    entry.sourceCurve = CopyCurve(curve);
-                    targetBlendShapeCurves.Add(new TargetBlendShapeCurve(entry, curve));
-                    continue;
+                    var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                    if (TryGetTargetBlendShapeEntry(binding, rendererPath, entryByName, out var entry))
+                    {
+                        AddKeyTimes(targetBlendShapeKeyTimes, curve);
+                        entry.hasSourceCurve = true;
+                        entry.sourceCurve = CopyCurve(curve);
+                        targetBlendShapeCurves.Add(new TargetBlendShapeCurve(entry, curve));
+                        continue;
+                    }
+
+                    model.preservedCurves.Add(PreservedCurve.FromBinding(binding, curve));
                 }
 
-                model.preservedCurves.Add(PreservedCurve.FromBinding(binding, curve));
+                var frameTimes = NormalizeKeyTimes(targetBlendShapeKeyTimes);
+                ApplySourceTimeRange(model, frameTimes);
+                ApplyFrameMode(model, frameTimes);
+
+                foreach (var targetBlendShapeCurve in targetBlendShapeCurves)
+                {
+                    ApplyCurveToEntry(model, targetBlendShapeCurve.Entry, targetBlendShapeCurve.Curve, frameTimes);
+                }
+
+                foreach (var binding in AnimationUtility.GetObjectReferenceCurveBindings(clip))
+                {
+                    var keyframes = AnimationUtility.GetObjectReferenceCurve(clip, binding);
+                    model.preservedObjectReferenceCurves.Add(PreservedObjectReferenceCurve.FromBinding(binding, keyframes));
+                }
+
+                return model;
             }
-
-            var frameTimes = NormalizeKeyTimes(targetBlendShapeKeyTimes);
-            ApplySourceTimeRange(model, frameTimes);
-            ApplyFrameMode(model, frameTimes);
-
-            foreach (var targetBlendShapeCurve in targetBlendShapeCurves)
+            catch
             {
-                ApplyCurveToEntry(model, targetBlendShapeCurve.Entry, targetBlendShapeCurve.Curve, frameTimes);
+                UnityEngine.Object.DestroyImmediate(model);
+                throw;
             }
-
-            foreach (var binding in AnimationUtility.GetObjectReferenceCurveBindings(clip))
-            {
-                var keyframes = AnimationUtility.GetObjectReferenceCurve(clip, binding);
-                model.preservedObjectReferenceCurves.Add(PreservedObjectReferenceCurve.FromBinding(binding, keyframes));
-            }
-
-            return model;
         }
 
         /// <summary>
@@ -149,64 +157,72 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 name = !string.IsNullOrEmpty(animationClipName) ? animationClipName : model.sourceClipName,
             };
 
-            var rendererPath = useTargetRendererAsRoot ? "" : GetRendererPath(model);
-            var outputDecisions = ExpressionOutputDiffService.ToDecisionMap(
-                ExpressionOutputDiffService.Evaluate(model, outputSettings));
-            if (includePreservedCurves)
+            try
             {
-                foreach (var preservedCurve in model.preservedCurves)
+                var rendererPath = useTargetRendererAsRoot ? "" : GetRendererPath(model);
+                var outputDecisions = ExpressionOutputDiffService.ToDecisionMap(
+                    ExpressionOutputDiffService.Evaluate(model, outputSettings));
+                if (includePreservedCurves)
                 {
-                    var binding = preservedCurve.ToBinding();
-                    if (binding.type == null)
+                    foreach (var preservedCurve in model.preservedCurves)
                     {
-                        Debug.LogWarning($"[FacialExpressionController] Cannot restore curve type: {preservedCurve.typeName}");
-                        continue;
+                        var binding = preservedCurve.ToBinding();
+                        if (binding.type == null)
+                        {
+                            Debug.LogWarning($"[FacialExpressionController] Cannot restore curve type: {preservedCurve.typeName}");
+                            continue;
+                        }
+
+                        if (ShouldSkipPreservedTargetBlendShapeCurve(model, binding, rendererPath))
+                        {
+                            continue;
+                        }
+
+                        AnimationUtility.SetEditorCurve(animationClip, binding, CopyCurve(preservedCurve.curve));
                     }
 
-                    if (ShouldSkipPreservedTargetBlendShapeCurve(model, binding, rendererPath))
+                    foreach (var preservedCurve in model.preservedObjectReferenceCurves)
                     {
-                        continue;
-                    }
+                        var binding = preservedCurve.ToBinding();
+                        if (binding.type == null)
+                        {
+                            Debug.LogWarning($"[FacialExpressionController] Cannot restore object reference curve type: {preservedCurve.typeName}");
+                            continue;
+                        }
 
-                    AnimationUtility.SetEditorCurve(animationClip, binding, CopyCurve(preservedCurve.curve));
+                        AnimationUtility.SetObjectReferenceCurve(animationClip, binding, preservedCurve.ToKeyframes());
+                    }
                 }
 
-                foreach (var preservedCurve in model.preservedObjectReferenceCurves)
+                foreach (var entry in model.entries)
                 {
-                    var binding = preservedCurve.ToBinding();
-                    if (binding.type == null)
+                    if (!entry.ShouldOutput)
                     {
-                        Debug.LogWarning($"[FacialExpressionController] Cannot restore object reference curve type: {preservedCurve.typeName}");
+                        RestoreLockedSystemSourceCurve(animationClip, rendererPath, entry);
                         continue;
                     }
 
-                    AnimationUtility.SetObjectReferenceCurve(animationClip, binding, preservedCurve.ToKeyframes());
+                    if (!ShouldWriteManagedBlendShapeCurve(entry, outputDecisions))
+                    {
+                        continue;
+                    }
+
+                    var animationCurve = GetOutputBlendShapeCurve(model, entry);
+                    if (animationCurve == null)
+                    {
+                        continue;
+                    }
+
+                    animationClip.SetCurve(rendererPath, typeof(SkinnedMeshRenderer), $"blendShape.{entry.name}", animationCurve);
                 }
+
+                return animationClip;
             }
-
-            foreach (var entry in model.entries)
+            catch
             {
-                if (!entry.ShouldOutput)
-                {
-                    RestoreLockedSystemSourceCurve(animationClip, rendererPath, entry);
-                    continue;
-                }
-
-                if (!ShouldWriteManagedBlendShapeCurve(entry, outputDecisions))
-                {
-                    continue;
-                }
-
-                var animationCurve = GetOutputBlendShapeCurve(model, entry);
-                if (animationCurve == null)
-                {
-                    continue;
-                }
-
-                animationClip.SetCurve(rendererPath, typeof(SkinnedMeshRenderer), $"blendShape.{entry.name}", animationCurve);
+                UnityEngine.Object.DestroyImmediate(animationClip);
+                throw;
             }
-
-            return animationClip;
         }
 
         /// <summary>

@@ -3,8 +3,10 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEditor;
+using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.TestTools;
+using UnityEngine.UIElements;
 using VRC.SDK3.Avatars.Components;
 
 namespace MitarashiDango.FacialExpressionController.Editor.Tests
@@ -13,6 +15,17 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
     {
         private readonly List<string> _assetPaths = new List<string>();
         private readonly List<Object> _temporaryObjects = new List<Object>();
+        private Object[] _previousSelection;
+
+        /// <summary>
+        /// エディターウィンドウの OnEnable が選択中のアバターを拾わないよう、選択を外しておく。
+        /// </summary>
+        [SetUp]
+        public void SetUp()
+        {
+            _previousSelection = Selection.objects;
+            Selection.activeObject = null;
+        }
 
         [TearDown]
         public void TearDown()
@@ -33,6 +46,9 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             }
 
             _temporaryObjects.Clear();
+
+            Selection.objects = _previousSelection ?? new Object[0];
+            _previousSelection = null;
         }
 
         [Test]
@@ -122,31 +138,468 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
         [Test]
         public void FacialExpressionEditorWindow_SaveFailure_KeepsUnsavedStateAndCurrentClip()
         {
-            var existingAsset = new Texture2D(1, 1) { name = "ExistingWindowTexture" };
-            var assetPath = GenerateAssetPath("ExpressionClipIOTests_WindowFailure.asset");
-            AssetDatabase.CreateAsset(existingAsset, assetPath);
-            _assetPaths.Add(assetPath);
-            var renderer = CreateAvatarRenderer("Smile");
-            var model = ExpressionClipIO.CreateModel(renderer.transform.root.gameObject, renderer);
-            _temporaryObjects.Add(model);
-            var currentClip = new AnimationClip { name = "WindowFailureClip" };
-            _temporaryObjects.Add(currentClip);
-            var window = ScriptableObject.CreateInstance<FacialExpressionEditorWindow>();
-            _temporaryObjects.Add(window);
-            SetPrivateField(window, "_model", model);
-            SetPrivateField(window, "_currentClip", currentClip);
-            SetPrivateField(window, "_currentAssetPath", assetPath);
-            GetPrivateMethod(typeof(FacialExpressionEditorWindow), "SetUnsavedChanges")
-                .Invoke(window, new object[] { true });
-            LogAssert.Expect(LogType.Exception, new Regex("AnimationClip 以外"));
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var currentClip = CreateClipAsset(folderPath, "WindowFailureClip", "Smile", 40f);
+            var clipPath = AssetDatabase.GetAssetPath(currentClip);
+            var window = CreateEditorWindow(() => true);
+            SetWindowAvatar(window, renderer);
+            ChangeClipField(window, currentClip);
+            EditWindowEntry(window, "Smile", 90f);
+            var model = GetWindowModel(window);
+            // 保存処理の try 内（ExpressionClipIO.ToClip）で例外を起こすための注入。保存後に取り除く。
+            model.entries.Add(null);
+            LogAssert.Expect(LogType.Exception, new Regex("NullReferenceException"));
+            LogAssert.Expect(LogType.Exception, new Regex("NullReferenceException"));
 
-            var saved = (bool)GetPrivateMethod(typeof(FacialExpressionEditorWindow), "TrySave")
-                .Invoke(window, null);
+            bool saved;
+            try
+            {
+                saved = (bool)InvokeWindowMethod(window, "TrySave");
+                Assert.Throws<System.OperationCanceledException>(() => window.SaveChanges());
+            }
+            finally
+            {
+                model.entries.RemoveAt(model.entries.Count - 1);
+            }
 
             Assert.That(saved, Is.False);
             Assert.That(window.hasUnsavedChanges, Is.True);
-            Assert.That(GetPrivateField<AnimationClip>(window, "_currentClip"), Is.SameAs(currentClip));
-            Assert.That(GetPrivateField<string>(window, "_currentAssetPath"), Is.EqualTo(assetPath));
+            AssertUnsavedIndicator(window, true);
+            AssertSaveTarget(window, currentClip, clipPath);
+            Assert.That(
+                GetFirstBlendShapeKeyValue(AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath), "Smile"),
+                Is.EqualTo(40f).Within(0.0001f));
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_ChangeAvatarAfterLoad_ClearsSaveTarget()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var firstRenderer = CreateDescriptorAvatarRenderer("Smile");
+            var secondRenderer = CreateDescriptorAvatarRenderer("Smile");
+            var clip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var clipPath = AssetDatabase.GetAssetPath(clip);
+            var confirmationCount = 0;
+            var window = CreateEditorWindow(() =>
+            {
+                confirmationCount++;
+                return true;
+            });
+            SetWindowAvatar(window, firstRenderer);
+
+            ChangeClipField(window, clip);
+
+            AssertSaveTarget(window, clip, clipPath);
+            Assert.That(GetEntry(GetWindowModel(window), "Smile").value, Is.EqualTo(40f).Within(0.0001f));
+
+            EditWindowEntry(window, "Smile", 90f);
+            SetWindowAvatar(window, secondRenderer);
+
+            Assert.That(confirmationCount, Is.EqualTo(1));
+            var model = GetWindowModel(window);
+            Assert.That(model, Is.Not.Null);
+            Assert.That(model.avatarRootObject, Is.SameAs(secondRenderer.transform.root.gameObject));
+            Assert.That(model.targetRenderer, Is.SameAs(secondRenderer));
+            Assert.That(model.hasSourceClip, Is.False);
+            AssertNoSaveTarget(window);
+            Assert.That(window.hasUnsavedChanges, Is.False);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_ChangeRendererAfterLoad_ClearsSaveTarget()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var firstRenderer = CreateDescriptorAvatarRenderer("Smile");
+            var secondRenderer = AddRenderer(firstRenderer.transform.root.gameObject, "Face2", "Smile");
+            var clip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var clipPath = AssetDatabase.GetAssetPath(clip);
+            var confirmationCount = 0;
+            var window = CreateEditorWindow(() =>
+            {
+                confirmationCount++;
+                return true;
+            });
+            SetWindowAvatar(window, firstRenderer);
+            Assert.That(GetWindowModel(window).targetRenderer, Is.SameAs(firstRenderer));
+
+            ChangeClipField(window, clip);
+            AssertSaveTarget(window, clip, clipPath);
+
+            SetWindowRenderer(window, secondRenderer);
+
+            Assert.That(confirmationCount, Is.EqualTo(0));
+            var model = GetWindowModel(window);
+            Assert.That(model, Is.Not.Null);
+            Assert.That(model.avatarRootObject, Is.SameAs(firstRenderer.transform.root.gameObject));
+            Assert.That(model.targetRenderer, Is.SameAs(secondRenderer));
+            Assert.That(model.hasSourceClip, Is.False);
+            AssertNoSaveTarget(window);
+            Assert.That(window.hasUnsavedChanges, Is.False);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_SameAvatarWithDestroyedRenderer_RebuildsWithResolvedRenderer()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var firstRenderer = CreateDescriptorAvatarRenderer("Smile");
+            var avatarRoot = firstRenderer.transform.root.gameObject;
+            var descriptor = avatarRoot.GetComponent<VRCAvatarDescriptor>();
+            var secondRenderer = AddRenderer(avatarRoot, "Face2", "Smile");
+            var clip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var confirmationCount = 0;
+            var window = CreateEditorWindow(() =>
+            {
+                confirmationCount++;
+                return true;
+            });
+            SetWindowAvatar(window, descriptor);
+            Assert.That(GetWindowModel(window).targetRenderer, Is.SameAs(firstRenderer));
+            ChangeClipField(window, clip);
+            EditWindowEntry(window, "Smile", 90f);
+            var editedModel = GetWindowModel(window);
+
+            Object.DestroyImmediate(firstRenderer.gameObject);
+            SetWindowAvatar(window, descriptor);
+
+            Assert.That(confirmationCount, Is.EqualTo(1));
+            var model = GetWindowModel(window);
+            Assert.That(model, Is.Not.Null);
+            Assert.That(model, Is.Not.SameAs(editedModel));
+            Assert.That(model.avatarRootObject, Is.SameAs(avatarRoot));
+            Assert.That(model.targetRenderer, Is.SameAs(secondRenderer));
+            Assert.That(GetPrivateField<ObjectField>(window, "_rendererField").value, Is.SameAs(secondRenderer));
+            AssertNoSaveTarget(window);
+            Assert.That(window.hasUnsavedChanges, Is.False);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_NewSession_ClearsClipField()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var clip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var confirmationCount = 0;
+            var window = CreateEditorWindow(() =>
+            {
+                confirmationCount++;
+                return true;
+            });
+            SetWindowAvatar(window, renderer);
+            ChangeClipField(window, clip);
+            AssertSaveTarget(window, clip, AssetDatabase.GetAssetPath(clip));
+
+            InvokeWindowMethod(window, "CreateNewSession");
+
+            Assert.That(confirmationCount, Is.EqualTo(0));
+            AssertNoSaveTarget(window);
+            Assert.That(GetWindowModel(window), Is.Not.Null);
+            Assert.That(GetWindowModel(window).hasSourceClip, Is.False);
+            Assert.That(window.hasUnsavedChanges, Is.False);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_ClearClipField_StartsNewSessionAfterConfirmation()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var clip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var confirmationCount = 0;
+            var window = CreateEditorWindow(() =>
+            {
+                confirmationCount++;
+                return true;
+            });
+            SetWindowAvatar(window, renderer);
+            ChangeClipField(window, clip);
+            EditWindowEntry(window, "Smile", 90f);
+            var editedModel = GetWindowModel(window);
+
+            ChangeClipField(window, null);
+
+            Assert.That(confirmationCount, Is.EqualTo(1));
+            AssertNoSaveTarget(window);
+            Assert.That(GetWindowModel(window), Is.Not.Null);
+            Assert.That(GetWindowModel(window), Is.Not.SameAs(editedModel));
+            Assert.That(GetWindowModel(window).hasSourceClip, Is.False);
+            Assert.That(window.hasUnsavedChanges, Is.False);
+            Assert.That(GetPrivateField<HelpBox>(window, "_messageBox").text, Is.EqualTo("新規セッションを開始しました。"));
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_ClipFieldChangeWithUnsavedChanges_CancelKeepsFieldAndEdits()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var firstClip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var secondClip = CreateClipAsset(folderPath, "Angry", "Smile", 70f);
+            var firstClipPath = AssetDatabase.GetAssetPath(firstClip);
+            var secondClipPath = AssetDatabase.GetAssetPath(secondClip);
+            var discard = false;
+            var confirmationCount = 0;
+            var window = CreateEditorWindow(() =>
+            {
+                confirmationCount++;
+                return discard;
+            });
+            SetWindowAvatar(window, renderer);
+            ChangeClipField(window, firstClip);
+            EditWindowEntry(window, "Smile", 90f);
+            var editedModel = GetWindowModel(window);
+
+            ChangeClipField(window, secondClip);
+
+            Assert.That(confirmationCount, Is.EqualTo(1));
+            AssertSaveTarget(window, firstClip, firstClipPath);
+            Assert.That(GetWindowModel(window), Is.SameAs(editedModel));
+            Assert.That(GetEntry(editedModel, "Smile").value, Is.EqualTo(90f).Within(0.0001f));
+            Assert.That(window.hasUnsavedChanges, Is.True);
+
+            ChangeClipField(window, null);
+
+            Assert.That(confirmationCount, Is.EqualTo(2));
+            AssertSaveTarget(window, firstClip, firstClipPath);
+            Assert.That(GetWindowModel(window), Is.SameAs(editedModel));
+            Assert.That(GetEntry(editedModel, "Smile").value, Is.EqualTo(90f).Within(0.0001f));
+            Assert.That(window.hasUnsavedChanges, Is.True);
+
+            discard = true;
+            ChangeClipField(window, secondClip);
+
+            Assert.That(confirmationCount, Is.EqualTo(3));
+            AssertSaveTarget(window, secondClip, secondClipPath);
+            Assert.That(GetEntry(GetWindowModel(window), "Smile").value, Is.EqualTo(70f).Within(0.0001f));
+            Assert.That(window.hasUnsavedChanges, Is.False);
+            AssertUnsavedIndicator(window, false);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_ClipFieldWithoutTarget_RevertsFieldAndWarns()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var clip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var confirmationCount = 0;
+            var window = CreateEditorWindow(() =>
+            {
+                confirmationCount++;
+                return true;
+            });
+
+            ChangeClipField(window, clip);
+
+            Assert.That(confirmationCount, Is.EqualTo(0));
+            Assert.That(GetWindowModel(window), Is.Null);
+            AssertNoSaveTarget(window);
+            var messageBox = GetPrivateField<HelpBox>(window, "_messageBox");
+            Assert.That(messageBox.text, Is.EqualTo("アバターと対象 Skinned Mesh Renderer を指定してください。"));
+            Assert.That(messageBox.messageType, Is.EqualTo(HelpBoxMessageType.Warning));
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_OverwriteSave_KeepsSavedClipAsSaveTarget()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var clip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var clipPath = AssetDatabase.GetAssetPath(clip);
+            var window = CreateEditorWindow(() => true);
+            SetWindowAvatar(window, renderer);
+            ChangeClipField(window, clip);
+            EditWindowEntry(window, "Smile", 90f);
+
+            var saved = (bool)InvokeWindowMethod(window, "TrySave");
+
+            Assert.That(saved, Is.True);
+            AssertSaveTarget(window, AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath), clipPath);
+            Assert.That(window.hasUnsavedChanges, Is.False);
+            AssertUnsavedIndicator(window, false);
+            Assert.That(
+                GetFirstBlendShapeKeyValue(AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath), "Smile"),
+                Is.EqualTo(90f).Within(0.0001f));
+
+            EditWindowEntry(window, "Smile", 70f);
+            AssertUnsavedIndicator(window, true);
+
+            saved = (bool)InvokeWindowMethod(window, "TrySave");
+
+            Assert.That(saved, Is.True);
+            AssertSaveTarget(window, AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath), clipPath);
+            Assert.That(window.hasUnsavedChanges, Is.False);
+            AssertUnsavedIndicator(window, false);
+            Assert.That(
+                GetFirstBlendShapeKeyValue(AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath), "Smile"),
+                Is.EqualTo(70f).Within(0.0001f));
+            Assert.That(AssetDatabase.FindAssets("t:AnimationClip", new[] { folderPath }), Has.Length.EqualTo(1));
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_OverwriteSaveAfterMove_SavesToMovedClip()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var clip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var originalPath = AssetDatabase.GetAssetPath(clip);
+            var window = CreateEditorWindow(() => true);
+            SetWindowAvatar(window, renderer);
+            ChangeClipField(window, clip);
+            EditWindowEntry(window, "Smile", 90f);
+            var movedFolderPath = AssetDatabase.GUIDToAssetPath(AssetDatabase.CreateFolder(folderPath, "Moved"));
+            var movedPath = $"{movedFolderPath}/Smile.anim";
+            Assert.That(AssetDatabase.MoveAsset(originalPath, movedPath), Is.Empty);
+
+            var saved = (bool)InvokeWindowMethod(window, "TrySave");
+
+            Assert.That(saved, Is.True);
+            var movedClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(movedPath);
+            AssertSaveTarget(window, movedClip, movedPath);
+            Assert.That(GetFirstBlendShapeKeyValue(movedClip, "Smile"), Is.EqualTo(90f).Within(0.0001f));
+            Assert.That(AssetDatabase.LoadMainAssetAtPath(originalPath), Is.Null);
+            Assert.That(System.IO.File.Exists(originalPath), Is.False);
+            Assert.That(AssetDatabase.FindAssets("t:AnimationClip", new[] { folderPath }), Has.Length.EqualTo(1));
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_LoadSubAssetClip_HasNoOverwriteSaveTarget()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var containerClip = CreateClipAsset(folderPath, "Container", "Smile", 10f);
+            var containerPath = AssetDatabase.GetAssetPath(containerClip);
+            var subClip = new AnimationClip { name = "SubSmile" };
+            SetBlendShapeCurve(subClip, "Face", "Smile", new AnimationCurve(new Keyframe(0f, 60f)));
+            AssetDatabase.AddObjectToAsset(subClip, containerPath);
+            AssetDatabase.SaveAssets();
+            Assert.That(AssetDatabase.GetAssetPath(subClip), Is.EqualTo(containerPath));
+            Assert.That(AssetDatabase.IsMainAsset(subClip), Is.False);
+            var window = CreateEditorWindow(() => true);
+            SetWindowAvatar(window, renderer);
+
+            ChangeClipField(window, subClip);
+
+            Assert.That(GetPrivateField<AnimationClip>(window, "_currentClip"), Is.SameAs(subClip));
+            Assert.That(GetPrivateField<ObjectField>(window, "_clipField").value, Is.SameAs(subClip));
+            Assert.That(GetEntry(GetWindowModel(window), "Smile").value, Is.EqualTo(60f).Within(0.0001f));
+            Assert.That(GetOverwriteSaveAssetPath(window), Is.Empty);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_IsWritableAssetPath_AcceptsAssetsAndRejectsEmpty()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var assetsClipPath = AssetDatabase.GetAssetPath(CreateClipAsset(folderPath, "Smile", "Smile", 40f));
+
+            Assert.That(FacialExpressionEditorWindow.IsWritableAssetPath(assetsClipPath), Is.True);
+            Assert.That(FacialExpressionEditorWindow.IsWritableAssetPath(""), Is.False);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_IsWritableAssetPath_RejectsRegistryPackage()
+        {
+            const string registryPackageFilePath = "Packages/com.unity.test-framework/package.json";
+            Assume.That(
+                UnityEditor.PackageManager.PackageInfo.FindForAssetPath(registryPackageFilePath)?.source,
+                Is.EqualTo(UnityEditor.PackageManager.PackageSource.Registry),
+                "com.unity.test-framework is not installed from the registry in this project.");
+
+            Assert.That(FacialExpressionEditorWindow.IsWritableAssetPath(registryPackageFilePath), Is.False);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_IsWritableAssetPath_AcceptsEmbeddedPackage()
+        {
+            const string embeddedPackageFilePath = "Packages/com.matcha-soft.facial-expression-controller/package.json";
+            Assume.That(
+                UnityEditor.PackageManager.PackageInfo.FindForAssetPath(embeddedPackageFilePath)?.source,
+                Is.EqualTo(UnityEditor.PackageManager.PackageSource.Embedded),
+                "com.matcha-soft.facial-expression-controller is not embedded in this project.");
+
+            Assert.That(FacialExpressionEditorWindow.IsWritableAssetPath(embeddedPackageFilePath), Is.True);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_UndoRedoWithoutModel_DoesNotMarkUnsaved()
+        {
+            var window = CreateEditorWindow(() => true);
+            Assert.That(GetWindowModel(window), Is.Null);
+
+            InvokeWindowMethod(window, "OnUndoRedoPerformed");
+
+            Assert.That(window.hasUnsavedChanges, Is.False);
+            AssertUnsavedIndicator(window, false);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_SameAvatarOrRenderer_KeepsSessionAndEdits()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var clip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var clipPath = AssetDatabase.GetAssetPath(clip);
+            var confirmationCount = 0;
+            var window = CreateEditorWindow(() =>
+            {
+                confirmationCount++;
+                return true;
+            });
+            SetWindowAvatar(window, renderer);
+            ChangeClipField(window, clip);
+            EditWindowEntry(window, "Smile", 90f);
+            var editedModel = GetWindowModel(window);
+
+            SetWindowAvatar(window, renderer);
+            SetWindowRenderer(window, renderer);
+
+            Assert.That(confirmationCount, Is.EqualTo(0));
+            Assert.That(GetWindowModel(window), Is.SameAs(editedModel));
+            Assert.That(GetEntry(editedModel, "Smile").value, Is.EqualTo(90f).Within(0.0001f));
+            Assert.That(window.hasUnsavedChanges, Is.True);
+            AssertSaveTarget(window, clip, clipPath);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_UnsavedLabel_FollowsUnsavedState()
+        {
+            const string existingFieldTooltip = "ExistingFieldTooltip";
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var confirmationCount = 0;
+            var window = CreateEditorWindow(() =>
+            {
+                confirmationCount++;
+                return true;
+            });
+            var clipField = GetPrivateField<ObjectField>(window, "_clipField");
+            var labelElement = clipField.labelElement;
+            clipField.tooltip = existingFieldTooltip;
+            AssertUnsavedIndicator(window, false);
+
+            SetWindowAvatar(window, renderer);
+            AssertUnsavedIndicator(window, false);
+
+            EditWindowEntry(window, "Smile", 90f);
+            AssertUnsavedIndicator(window, true);
+            Assert.That(clipField.labelElement, Is.SameAs(labelElement));
+            Assert.That(labelElement.style.width.value.value, Is.EqualTo(180f));
+            Assert.That(labelElement.style.minWidth.value.value, Is.EqualTo(160f));
+
+            window.DiscardChanges();
+            AssertUnsavedIndicator(window, false);
+            Assert.That(clipField.tooltip, Is.EqualTo(existingFieldTooltip));
+
+            InvokeWindowMethod(window, "OnUndoRedoPerformed");
+            AssertUnsavedIndicator(window, true);
+            Assert.That(clipField.tooltip, Is.EqualTo(existingFieldTooltip));
+
+            InvokeWindowMethod(window, "OnDisable");
+            InvokeWindowMethod(window, "OnEnable");
+
+            Assert.That(GetPrivateField<ObjectField>(window, "_clipField"), Is.Not.SameAs(clipField));
+            AssertUnsavedIndicator(window, true);
+            Assert.That(GetPrivateField<HelpBox>(window, "_messageBox").text, Is.EqualTo("未保存の編集を復元しました。"));
+
+            InvokeWindowMethod(window, "CreateNewSession");
+
+            Assert.That(confirmationCount, Is.EqualTo(1));
+            AssertUnsavedIndicator(window, false);
         }
 
         [Test]
@@ -565,15 +1018,6 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             return method;
         }
 
-        private static void SetPrivateField(object target, string fieldName, object value)
-        {
-            var field = target.GetType().GetField(
-                fieldName,
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            Assert.That(field, Is.Not.Null, $"Private field was not found: {target.GetType().FullName}.{fieldName}");
-            field.SetValue(target, value);
-        }
-
         private static T GetPrivateField<T>(object target, string fieldName)
         {
             var field = target.GetType().GetField(
@@ -581,6 +1025,137 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
             Assert.That(field, Is.Not.Null, $"Private field was not found: {target.GetType().FullName}.{fieldName}");
             return (T)field.GetValue(target);
+        }
+
+        private string CreateTemporaryAssetFolder()
+        {
+            var folderGuid = AssetDatabase.CreateFolder("Assets", "ExpressionClipIOTests_Temp");
+            var folderPath = AssetDatabase.GUIDToAssetPath(folderGuid);
+            Assert.That(folderPath, Is.Not.Empty, "Temporary asset folder could not be created.");
+            _assetPaths.Add(folderPath);
+            return folderPath;
+        }
+
+        private static AnimationClip CreateClipAsset(string folderPath, string clipName, string blendShapeName, float value)
+        {
+            var clip = new AnimationClip { name = clipName };
+            SetBlendShapeCurve(clip, "Face", blendShapeName, new AnimationCurve(new Keyframe(0f, value)));
+            var assetPath = $"{folderPath}/{clipName}.anim";
+            AssetDatabase.CreateAsset(clip, assetPath);
+            var savedClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(assetPath);
+            Assert.That(savedClip, Is.Not.Null, $"Clip asset could not be created: {assetPath}");
+            return savedClip;
+        }
+
+        private static float GetFirstBlendShapeKeyValue(AnimationClip clip, string blendShapeName)
+        {
+            Assert.That(clip, Is.Not.Null);
+            var curve = GetBlendShapeCurve(clip, "Face", blendShapeName);
+            Assert.That(curve, Is.Not.Null);
+            Assert.That(curve.length, Is.GreaterThan(0));
+            return curve.keys[0].value;
+        }
+
+        private SkinnedMeshRenderer CreateDescriptorAvatarRenderer(params string[] blendShapeNames)
+        {
+            var renderer = CreateAvatarRenderer(blendShapeNames);
+            renderer.transform.root.gameObject.AddComponent<VRCAvatarDescriptor>();
+            return renderer;
+        }
+
+        private SkinnedMeshRenderer AddRenderer(GameObject avatarRoot, string objectName, params string[] blendShapeNames)
+        {
+            var rendererObject = new GameObject(objectName);
+            rendererObject.transform.SetParent(avatarRoot.transform, false);
+            var renderer = rendererObject.AddComponent<SkinnedMeshRenderer>();
+            renderer.sharedMesh = CreateMesh(blendShapeNames);
+            _temporaryObjects.Add(renderer.sharedMesh);
+            return renderer;
+        }
+
+        private FacialExpressionEditorWindow CreateEditorWindow(System.Func<bool> discardUnsavedChangesConfirmation)
+        {
+            var window = ScriptableObject.CreateInstance<FacialExpressionEditorWindow>();
+            _temporaryObjects.Add(window);
+            window.DiscardUnsavedChangesConfirmation = discardUnsavedChangesConfirmation;
+            Assert.That(GetPrivateField<ObjectField>(window, "_clipField"), Is.Not.Null, "Editor window UI was not built.");
+            return window;
+        }
+
+        private static object InvokeWindowMethod(FacialExpressionEditorWindow window, string methodName, params object[] arguments)
+        {
+            return GetPrivateMethod(typeof(FacialExpressionEditorWindow), methodName).Invoke(window, arguments);
+        }
+
+        private static ExpressionEditModel GetWindowModel(FacialExpressionEditorWindow window)
+        {
+            return GetPrivateField<ExpressionEditModel>(window, "_model");
+        }
+
+        private static void SetWindowAvatar(FacialExpressionEditorWindow window, SkinnedMeshRenderer avatarRenderer)
+        {
+            SetWindowAvatar(window, avatarRenderer.transform.root.GetComponent<VRCAvatarDescriptor>());
+        }
+
+        private static void SetWindowAvatar(FacialExpressionEditorWindow window, VRCAvatarDescriptor descriptor)
+        {
+            GetPrivateField<ObjectField>(window, "_avatarField").SetValueWithoutNotify(descriptor);
+            InvokeWindowMethod(window, "SetAvatar", descriptor);
+        }
+
+        private static string GetOverwriteSaveAssetPath(FacialExpressionEditorWindow window)
+        {
+            return (string)InvokeWindowMethod(window, "GetOverwriteSaveAssetPath");
+        }
+
+        private static void SetWindowRenderer(FacialExpressionEditorWindow window, SkinnedMeshRenderer renderer)
+        {
+            GetPrivateField<ObjectField>(window, "_rendererField").SetValueWithoutNotify(renderer);
+            InvokeWindowMethod(window, "SetRenderer", renderer);
+        }
+
+        /// <summary>
+        /// クリップ欄を UI から変更した場合と同じく、欄の値を更新してから変更通知の処理を呼ぶ。
+        /// </summary>
+        private static void ChangeClipField(FacialExpressionEditorWindow window, AnimationClip clip)
+        {
+            GetPrivateField<ObjectField>(window, "_clipField").SetValueWithoutNotify(clip);
+            InvokeWindowMethod(window, "OnClipFieldChanged", clip);
+        }
+
+        private static void EditWindowEntry(FacialExpressionEditorWindow window, string blendShapeName, float value)
+        {
+            var entry = GetEntry(GetWindowModel(window), blendShapeName);
+            entry.value = value;
+            entry.endValue = value;
+            InvokeWindowMethod(window, "MarkUnsaved");
+        }
+
+        private static void AssertSaveTarget(FacialExpressionEditorWindow window, AnimationClip expectedClip, string expectedAssetPath)
+        {
+            Assert.That(expectedClip, Is.Not.Null);
+            Assert.That(GetPrivateField<AnimationClip>(window, "_currentClip"), Is.SameAs(expectedClip));
+            Assert.That(GetOverwriteSaveAssetPath(window), Is.EqualTo(expectedAssetPath));
+            Assert.That(GetPrivateField<ObjectField>(window, "_clipField").value, Is.SameAs(expectedClip));
+        }
+
+        private static void AssertNoSaveTarget(FacialExpressionEditorWindow window)
+        {
+            Assert.That(GetPrivateField<AnimationClip>(window, "_currentClip"), Is.Null);
+            Assert.That(GetOverwriteSaveAssetPath(window), Is.Empty);
+            Assert.That(GetPrivateField<ObjectField>(window, "_clipField").value, Is.Null);
+        }
+
+        private static void AssertUnsavedIndicator(FacialExpressionEditorWindow window, bool expectedUnsaved)
+        {
+            var clipField = GetPrivateField<ObjectField>(window, "_clipField");
+            var expectedLabel = expectedUnsaved
+                ? FacialExpressionEditorWindow.ClipFieldLabel + FacialExpressionEditorWindow.UnsavedLabelSuffix
+                : FacialExpressionEditorWindow.ClipFieldLabel;
+            var expectedTooltip = expectedUnsaved ? FacialExpressionEditorWindow.UnsavedChangesTooltip : "";
+            Assert.That(clipField.label, Is.EqualTo(expectedLabel));
+            Assert.That(clipField.labelElement.text, Is.EqualTo(expectedLabel));
+            Assert.That(clipField.labelElement.tooltip ?? "", Is.EqualTo(expectedTooltip));
         }
 
         private static string GetBindingKey(EditorCurveBinding binding)
