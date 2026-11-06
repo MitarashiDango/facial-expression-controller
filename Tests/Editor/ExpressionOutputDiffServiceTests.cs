@@ -287,22 +287,29 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             var entry = model.entries[0];
             var listView = new BlendShapeListView(model, new VisualElement(), new Label());
             var row = CreateBoundBlendShapeRow(listView, entry);
-            var resetButton = GetBlendShapeRowField<Button>(row, "_resetButton");
+            var resetButton = GetBlendShapeRowField<Button>(row, "_entryResetButton");
 
             Assert.That(resetButton.enabledSelf, Is.False);
+            Assert.That(resetButton.ClassListContains("invisible"), Is.True, "未変更の行では列幅を保ったまま隠す");
+            Assert.That(resetButton.ClassListContains("hidden"), Is.False);
+            Assert.That(resetButton.text, Is.Empty);
+            Assert.That(resetButton.tooltip, Is.EqualTo("このブレンドシェイプの始点・終点を初期値に戻します。"));
 
             InvokeBlendShapeRowFloatHandler(row, "OnSliderChanged", 25f);
 
             Assert.That(resetButton.enabledSelf, Is.True);
+            Assert.That(resetButton.ClassListContains("invisible"), Is.False);
 
             InvokeBlendShapeRowFloatHandler(row, "OnSliderChanged", entry.initialValue);
 
             Assert.That(resetButton.enabledSelf, Is.False);
+            Assert.That(resetButton.ClassListContains("invisible"), Is.True);
 
             entry.userExcluded = true;
             InvokeBlendShapeRowMethod(row, "Bind", entry);
 
             Assert.That(resetButton.enabledSelf, Is.False);
+            Assert.That(resetButton.ClassListContains("invisible"), Is.True);
             Assert.That(((VisualElement)row).ClassListContains("changed"), Is.True);
 
             entry.userExcluded = false;
@@ -310,7 +317,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             entry.value = 25f;
             InvokeBlendShapeRowMethod(row, "Bind", entry);
 
-            Assert.That(resetButton.enabledSelf, Is.False);
+            Assert.That(resetButton.enabledSelf, Is.False, "値が変わっていても編集できない行では無効にする");
+            Assert.That(resetButton.ClassListContains("invisible"), Is.False);
         }
 
         [Test]
@@ -426,29 +434,35 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             var entry = model.entries[0];
             var listView = new BlendShapeListView(model, new VisualElement(), new Label());
             var uiListView = GetBlendShapeListViewField<ListView>(listView, "_listView");
+            var header = GetBlendShapeListViewField<VisualElement>(listView, "_header");
             var row = CreateBoundBlendShapeRow(listView, entry);
             var outputStatusLabel = GetBlendShapeRowField<Label>(row, "_outputStatusLabel");
-            var reasonLabel = GetBlendShapeRowField<Label>(row, "_reasonLabel");
+            var lockIcon = GetBlendShapeRowField<ExpressionEditorIconElement>(row, "_lockIcon");
             var nameLabel = GetBlendShapeRowField<Label>(row, "_nameLabel");
 
             Assert.That(outputStatusLabel.ClassListContains("hidden"), Is.False);
             Assert.That(outputStatusLabel.style.visibility.value, Is.EqualTo(Visibility.Hidden));
-            Assert.That(reasonLabel.ClassListContains("hidden"), Is.False);
-            Assert.That(reasonLabel.text, Is.Empty);
+            Assert.That(lockIcon.ClassListContains("invisible"), Is.True);
 
             entry.systemExclusion = BlendShapeSystemExclusionReason.Mmd;
             InvokeBlendShapeRowMethod(row, "Bind", entry);
 
-            Assert.That(reasonLabel.ClassListContains("hidden"), Is.False);
+            Assert.That(lockIcon.ClassListContains("invisible"), Is.False);
+            Assert.That(lockIcon.tooltip, Does.StartWith("システム除外: MMD\n"));
             Assert.That(nameLabel.tooltip, Does.Contain("除外理由: MMD"));
 
             InvokeBlendShapeListViewMethod(listView, "UpdateResponsiveLayout", 559f);
 
             Assert.That(uiListView.ClassListContains("narrow"), Is.True);
+            Assert.That(header.ClassListContains("narrow"), Is.True);
+            Assert.That(lockIcon.ClassListContains("invisible"), Is.False, "狭幅表示でも鍵アイコンは消さない");
+            Assert.That(lockIcon.tooltip, Does.StartWith("システム除外: MMD\n"), "狭幅表示でも除外理由を tooltip で確認できる");
+            Assert.That(nameLabel.tooltip, Does.Contain("除外理由: MMD"));
 
             InvokeBlendShapeListViewMethod(listView, "UpdateResponsiveLayout", 800f);
 
             Assert.That(uiListView.ClassListContains("narrow"), Is.False);
+            Assert.That(header.ClassListContains("narrow"), Is.False);
         }
 
         private ExpressionEditModel CreateModel(string[] blendShapeNames, float[] weights)

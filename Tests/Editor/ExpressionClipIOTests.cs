@@ -15,6 +15,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
     {
         private readonly List<string> _assetPaths = new List<string>();
         private readonly List<Object> _temporaryObjects = new List<Object>();
+        private readonly List<string> _notifications = new List<string>();
         private Object[] _previousSelection;
 
         /// <summary>
@@ -25,6 +26,7 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
         {
             _previousSelection = Selection.objects;
             Selection.activeObject = null;
+            _notifications.Clear();
         }
 
         [TearDown]
@@ -323,7 +325,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             Assert.That(GetWindowModel(window), Is.Not.SameAs(editedModel));
             Assert.That(GetWindowModel(window).hasSourceClip, Is.False);
             Assert.That(window.hasUnsavedChanges, Is.False);
-            Assert.That(GetPrivateField<HelpBox>(window, "_messageBox").text, Is.EqualTo("新規セッションを開始しました。"));
+            Assert.That(_notifications.LastOrDefault(), Is.EqualTo("新規セッションを開始しました。"));
+            AssertMessageBoxHidden(window);
         }
 
         [Test]
@@ -393,6 +396,8 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             var messageBox = GetPrivateField<HelpBox>(window, "_messageBox");
             Assert.That(messageBox.text, Is.EqualTo("アバターと対象 Skinned Mesh Renderer を指定してください。"));
             Assert.That(messageBox.messageType, Is.EqualTo(HelpBoxMessageType.Warning));
+            Assert.That(messageBox.ClassListContains(ExpressionEditorStyles.HiddenClassName), Is.False);
+            Assert.That(_notifications, Is.Empty, "警告は通知に出さない");
         }
 
         [Test]
@@ -529,6 +534,613 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
         }
 
         [Test]
+        public void FacialExpressionEditorWindow_ListHeader_ReplacesBulkMenuAndResetButton()
+        {
+            var renderer = CreateDescriptorAvatarRenderer("Smile", "Blink");
+            var window = CreateEditorWindow(() => true);
+            var instanceFields = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+
+            Assert.That(typeof(FacialExpressionEditorWindow).GetField("_bulkTargetMenu", instanceFields), Is.Null);
+            Assert.That(typeof(FacialExpressionEditorWindow).GetField("_resetButton", instanceFields), Is.Null);
+            Assert.That(window.rootVisualElement.Query<ToolbarMenu>().ToList().Select(menu => menu.text), Has.None.EqualTo("一括変更"));
+            Assert.That(window.rootVisualElement.Query<Button>().ToList().Select(button => button.text), Has.None.EqualTo("リセット"));
+            Assert.That(
+                window.rootVisualElement.ClassListContains(EditorGUIUtility.isProSkin
+                    ? ExpressionEditorStyles.DarkSkinClassName
+                    : ExpressionEditorStyles.LightSkinClassName),
+                Is.True);
+
+            SetWindowAvatar(window, renderer);
+            var model = GetWindowModel(window);
+            try
+            {
+                var listView = GetPrivateField<BlendShapeListView>(window, "_blendShapeListView");
+                var headerToggle = GetPrivateField<Toggle>(listView, "_headerTargetToggle");
+                Assert.That(window.rootVisualElement.Q(className: "blendshape-list-header"), Is.Not.Null);
+                Assert.That(headerToggle.value, Is.True);
+                Assert.That(headerToggle.showMixedValue, Is.False);
+
+                var excludeAction = listView.CreateHeaderMenu()
+                    .MenuItems()
+                    .OfType<DropdownMenuAction>()
+                    .Single(action => action.name == BlendShapeListView.GetBulkAllExcludedLabel(2));
+                excludeAction.Execute();
+                Undo.FlushUndoRecordObjects();
+
+                Assert.That(model.entries.All(entry => !entry.ShouldOutput), Is.True);
+                Assert.That(headerToggle.value, Is.False);
+                Assert.That(_notifications.LastOrDefault(), Is.EqualTo("2 件を編集・出力対象外にしました。"), "一括変更の結果は通知で表示する");
+                AssertMessageBoxHidden(window);
+
+                Undo.PerformUndo();
+                InvokeWindowMethod(window, "OnUndoRedoPerformed");
+
+                Assert.That(model.entries.All(entry => entry.ShouldOutput), Is.True);
+                Assert.That(headerToggle.value, Is.True);
+
+                Undo.PerformRedo();
+                InvokeWindowMethod(window, "OnUndoRedoPerformed");
+
+                Assert.That(headerToggle.value, Is.False);
+
+                Undo.ClearUndo(model);
+                InvokeWindowMethod(window, "CreateNewSession");
+                var newListView = GetPrivateField<BlendShapeListView>(window, "_blendShapeListView");
+
+                Assert.That(newListView, Is.Not.SameAs(listView));
+                Assert.That(GetPrivateField<Toggle>(newListView, "_headerTargetToggle").value, Is.True, "新規セッションでは全件が対象");
+            }
+            finally
+            {
+                if (model != null)
+                {
+                    Undo.ClearUndo(model);
+                }
+            }
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_FilterBar_ChipsReplaceMenuAndFollowListFilters()
+        {
+            var renderer = CreateDescriptorAvatarRenderer("Smile", "Blink", "Angry");
+            var window = CreateEditorWindow(() => true);
+            var instanceFields = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            foreach (var removedField in new[]
+            {
+                "_filterMenu",
+                "_sceneInfluenceFilterToggle",
+                "_clearSceneInfluenceFilterButton",
+                "_sceneInfluenceFilterStatusLabel",
+            })
+            {
+                Assert.That(typeof(FacialExpressionEditorWindow).GetField(removedField, instanceFields), Is.Null, removedField);
+            }
+
+            var root = window.rootVisualElement;
+            Assert.That(root.Q(className: "filter-primary-row"), Is.Null, "絞り込みは 1 行にまとめた");
+            Assert.That(root.Q(className: "filter-scene-row"), Is.Null, "2 段目の行は廃止した");
+            Assert.That(root.Query<ToolbarMenu>().ToList(), Is.Empty, "「絞り込み」メニューは廃止した");
+            Assert.That(root.Query<Button>().ToList().Select(button => button.text), Has.None.EqualTo("位置フィルタ解除"));
+
+            var filterContainer = root.Q<VisualElement>("filter-container");
+            var filterItems = filterContainer.Q(className: "filter-items");
+            var changedChip = GetPrivateField<Button>(window, "_changedOnlyFilterChip");
+            var editableChip = GetPrivateField<Button>(window, "_editableOnlyFilterChip");
+            var outputChip = GetPrivateField<Button>(window, "_outputOnlyFilterChip");
+            var countLabel = GetPrivateField<Label>(window, "_filterCountLabel");
+            Assert.That(
+                new[] { changedChip, editableChip, outputChip }.Select(chip => (chip.text, chip.tooltip)),
+                Is.EqualTo(new[]
+                {
+                    ("変更あり", "変更された項目のみ表示"),
+                    ("対象のみ", "編集・出力対象のみ表示"),
+                    ("出力予定", "出力予定のみ表示"),
+                }));
+            Assert.That(filterItems.Contains(GetPrivateField<ToolbarSearchField>(window, "_searchField")), Is.True);
+            Assert.That(filterItems.Contains(changedChip), Is.True);
+            Assert.That(filterItems.Contains(GetPrivateField<Button>(window, "_sceneInfluenceFilterButton")), Is.True);
+            Assert.That(filterItems.Contains(GetPrivateField<VisualElement>(window, "_sceneInfluenceFilterChip")), Is.True);
+            Assert.That(filterContainer.IndexOf(countLabel), Is.EqualTo(filterContainer.childCount - 1), "表示数は右端に置く");
+            Assert.That(countLabel.tooltip, Is.EqualTo(FacialExpressionEditorWindow.FilterCountTooltip));
+            Assert.That(IsHidden(countLabel), Is.True, "編集中の表情がなければ表示数は出さない");
+            Assert.That(
+                new[] { changedChip, editableChip, outputChip }.Any(chip => chip.ClassListContains(ExpressionEditorStyles.SelectedClassName)),
+                Is.False);
+
+            SetWindowAvatar(window, renderer);
+            var model = GetWindowModel(window);
+            try
+            {
+                var listView = GetPrivateField<BlendShapeListView>(window, "_blendShapeListView");
+                Assert.That(GetFilterCountText(window), Is.EqualTo("3 / 3"));
+
+                InvokeWindowMethod(window, "ToggleChangedOnlyFilter");
+
+                Assert.That(changedChip.ClassListContains(ExpressionEditorStyles.SelectedClassName), Is.True);
+                Assert.That(listView.VisibleEntryCount, Is.Zero);
+                Assert.That(GetFilterCountText(window), Is.EqualTo("0 / 3"));
+
+                EditWindowEntry(window, "Smile", 50f);
+                InvokeWindowMethod(window, "RefreshOutputDecisionUi");
+
+                Assert.That(GetFilterCountText(window), Is.EqualTo("1 / 3"), "編集で絞り込みの結果が変わったら表示数も変わる");
+
+                InvokeWindowMethod(window, "ToggleChangedOnlyFilter");
+                InvokeWindowMethod(window, "ToggleEditableOnlyFilter");
+
+                Assert.That(changedChip.ClassListContains(ExpressionEditorStyles.SelectedClassName), Is.False);
+                Assert.That(editableChip.ClassListContains(ExpressionEditorStyles.SelectedClassName), Is.True);
+                Assert.That(GetFilterCountText(window), Is.EqualTo("3 / 3"));
+
+                ExecuteHeaderMenuAction(listView, BlendShapeListView.GetBulkAllExcludedLabel(3));
+
+                Assert.That(GetFilterCountText(window), Is.EqualTo("0 / 3"), "一括変更の後も表示数を合わせる");
+                Assert.That(editableChip.ClassListContains(ExpressionEditorStyles.SelectedClassName), Is.True);
+                Assert.That(_notifications.LastOrDefault(), Is.EqualTo("3 件を編集・出力対象外にしました。"));
+
+                Undo.PerformUndo();
+                InvokeWindowMethod(window, "OnUndoRedoPerformed");
+
+                Assert.That(GetFilterCountText(window), Is.EqualTo("3 / 3"), "Undo の後も表示数を合わせる");
+                Assert.That(editableChip.ClassListContains(ExpressionEditorStyles.SelectedClassName), Is.True);
+
+                Undo.PerformRedo();
+                InvokeWindowMethod(window, "OnUndoRedoPerformed");
+
+                Assert.That(GetFilterCountText(window), Is.EqualTo("0 / 3"), "Redo の後も表示数を合わせる");
+
+                InvokeWindowMethod(window, "ToggleEditableOnlyFilter");
+                InvokeWindowMethod(window, "ToggleOutputOnlyFilter");
+
+                // 出力予定の判定は、エディターの更新時にまとめて計算し直す。
+                InvokeWindowMethod(window, "RefreshOutputDecisionUi");
+
+                Assert.That(outputChip.ClassListContains(ExpressionEditorStyles.SelectedClassName), Is.True);
+                Assert.That(GetFilterCountText(window), Is.EqualTo("0 / 3"), "対象外は出力予定に含めない");
+
+                InvokeWindowMethod(window, "ToggleOutputOnlyFilter");
+
+                Assert.That(GetFilterCountText(window), Is.EqualTo("3 / 3"));
+            }
+            finally
+            {
+                Undo.ClearUndo(model);
+            }
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_SceneInfluenceFilter_ShowsLocationChipAndClearsWithCrossButton()
+        {
+            var renderer = CreateDescriptorAvatarRenderer("Smile", "Blink", "Angry");
+            var window = CreateEditorWindow(() => true);
+            var sceneButton = GetPrivateField<Button>(window, "_sceneInfluenceFilterButton");
+            var sceneIcon = GetPrivateField<ExpressionEditorIconElement>(window, "_sceneInfluenceFilterIcon");
+            var locationChip = GetPrivateField<VisualElement>(window, "_sceneInfluenceFilterChip");
+            var locationLabel = GetPrivateField<Label>(window, "_sceneInfluenceFilterChipLabel");
+            var clearButton = GetPrivateField<Button>(window, "_sceneInfluenceFilterClearButton");
+            var clearIcon = GetPrivateField<ExpressionEditorIconElement>(window, "_sceneInfluenceFilterClearIcon");
+            Assert.That(sceneButton.text, Is.Null.Or.Empty, "文字ではなくアイコンで示す");
+            Assert.That(sceneButton.tooltip, Is.EqualTo(FacialExpressionEditorWindow.SceneInfluenceFilterTooltip));
+            Assert.That(sceneButton.Contains(sceneIcon), Is.True);
+            Assert.That(sceneIcon.Icon, Is.SameAs(ExpressionEditorIcons.ScenePick));
+            Assert.That(sceneButton.enabledSelf, Is.False, "編集中の表情がなければ使えない");
+            Assert.That(clearButton.tooltip, Is.EqualTo(FacialExpressionEditorWindow.ClearSceneInfluenceFilterTooltip));
+            Assert.That(clearButton.Contains(clearIcon), Is.True);
+            Assert.That(clearIcon.Icon, Is.SameAs(ExpressionEditorIcons.Clear));
+            Assert.That(locationChip.Contains(clearButton), Is.True);
+            Assert.That(IsHidden(locationChip), Is.True);
+
+            SetWindowAvatar(window, renderer);
+            var model = GetWindowModel(window);
+
+            ClickButton(sceneButton);
+
+            Assert.That(sceneButton.ClassListContains(ExpressionEditorStyles.SelectedClassName), Is.True);
+            Assert.That(IsHidden(locationChip), Is.True, "クリック位置を指定するまでは位置フィルタのチップを出さない");
+
+            ApplySceneInfluenceFilter(window, GetEntry(model, "Smile"));
+
+            Assert.That(IsHidden(locationChip), Is.False);
+            Assert.That(locationLabel.text, Is.EqualTo("位置 1"));
+            Assert.That(GetFilterCountText(window), Is.EqualTo("1 / 3"));
+            Assert.That(_notifications.LastOrDefault(), Is.EqualTo("1 件のブレンドシェイプをクリック位置で絞り込みました。"));
+            AssertMessageBoxHidden(window);
+
+            ClickButton(clearButton);
+
+            Assert.That(IsHidden(locationChip), Is.True);
+            Assert.That(GetFilterCountText(window), Is.EqualTo("3 / 3"));
+            Assert.That(_notifications.LastOrDefault(), Is.EqualTo("位置フィルタを解除しました。"));
+            Assert.That(sceneButton.ClassListContains(ExpressionEditorStyles.SelectedClassName), Is.True, "× は絞り込みだけを解除する");
+
+            var notificationCount = _notifications.Count;
+            ApplySceneInfluenceFilter(window);
+
+            Assert.That(locationLabel.text, Is.EqualTo("位置 0"));
+            Assert.That(GetFilterCountText(window), Is.EqualTo("0 / 3"));
+            var messageBox = GetPrivateField<HelpBox>(window, "_messageBox");
+            Assert.That(messageBox.text, Is.EqualTo("クリック位置に影響するブレンドシェイプは見つかりませんでした。"));
+            Assert.That(messageBox.messageType, Is.EqualTo(HelpBoxMessageType.Warning));
+            Assert.That(_notifications, Has.Count.EqualTo(notificationCount), "警告は通知に出さない");
+
+            ClickButton(sceneButton);
+
+            Assert.That(sceneButton.ClassListContains(ExpressionEditorStyles.SelectedClassName), Is.False);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_EmptyByFilters_ShowsClearButtonThatClearsAllFilters()
+        {
+            var renderer = CreateDescriptorAvatarRenderer("Smile", "Blink", "Angry");
+            var window = CreateEditorWindow(() => true);
+            var emptyLabel = GetPrivateField<Label>(window, "_emptyLabel");
+            var clearFiltersButton = GetPrivateField<Button>(window, "_clearFiltersButton");
+            Assert.That(clearFiltersButton.text, Is.EqualTo("絞り込みを解除"));
+            Assert.That(clearFiltersButton.tooltip, Is.EqualTo(FacialExpressionEditorWindow.ClearFiltersTooltip));
+            Assert.That(clearFiltersButton.parent, Is.SameAs(emptyLabel.parent), "0 件の文言の横に置く");
+            Assert.That(IsHidden(emptyLabel), Is.False);
+            Assert.That(emptyLabel.text, Is.EqualTo(FacialExpressionEditorWindow.EmptyListText));
+            Assert.That(IsHidden(clearFiltersButton), Is.True, "編集中の表情がないときは解除ボタンを出さない");
+
+            SetWindowAvatar(window, renderer);
+            var model = GetWindowModel(window);
+            var listView = GetPrivateField<BlendShapeListView>(window, "_blendShapeListView");
+            var searchField = GetPrivateField<ToolbarSearchField>(window, "_searchField");
+            Assert.That(IsHidden(emptyLabel), Is.True);
+            Assert.That(IsHidden(clearFiltersButton), Is.True);
+
+            searchField.SetValueWithoutNotify("NotFound");
+            listView.SetSearchText("NotFound");
+
+            Assert.That(IsHidden(emptyLabel), Is.False);
+            Assert.That(emptyLabel.text, Is.EqualTo(FacialExpressionEditorWindow.FilteredEmptyListText));
+            Assert.That(IsHidden(clearFiltersButton), Is.False);
+            Assert.That(GetFilterCountText(window), Is.EqualTo("0 / 3"));
+            var listHeader = window.rootVisualElement.Q(className: "blendshape-list-header");
+            Assert.That(listHeader, Is.Not.Null);
+            Assert.That(IsHidden(listHeader), Is.False, "0 件でも一覧ヘッダーは表示する");
+
+            InvokeWindowMethod(window, "ToggleChangedOnlyFilter");
+            InvokeWindowMethod(window, "ToggleEditableOnlyFilter");
+            InvokeWindowMethod(window, "ToggleOutputOnlyFilter");
+            var sceneButton = GetPrivateField<Button>(window, "_sceneInfluenceFilterButton");
+            ClickButton(sceneButton);
+            ApplySceneInfluenceFilter(window, GetEntry(model, "Blink"));
+            var refreshCount = 0;
+            listView.VisibleEntriesChanged += () => refreshCount++;
+
+            ClickButton(clearFiltersButton);
+
+            Assert.That(refreshCount, Is.EqualTo(1), "すべての絞り込みを外しても一覧の作り直しは 1 回にする");
+            Assert.That(GetPrivateField<bool>(window, "_sceneInfluenceFilterEnabled"), Is.True, "シーンから絞り込むモードは続ける");
+            Assert.That(sceneButton.ClassListContains(ExpressionEditorStyles.SelectedClassName), Is.True);
+            Assert.That(searchField.value, Is.Empty);
+            Assert.That(GetPrivateField<bool>(window, "_showChangedOnly"), Is.False);
+            Assert.That(GetPrivateField<bool>(window, "_showEditableOnly"), Is.False);
+            Assert.That(GetPrivateField<bool>(window, "_showOutputOnly"), Is.False);
+            Assert.That(GetPrivateField<object>(window, "_sceneInfluenceResults"), Is.Null);
+            foreach (var chipFieldName in new[] { "_changedOnlyFilterChip", "_editableOnlyFilterChip", "_outputOnlyFilterChip" })
+            {
+                Assert.That(
+                    GetPrivateField<Button>(window, chipFieldName).ClassListContains(ExpressionEditorStyles.SelectedClassName),
+                    Is.False,
+                    chipFieldName);
+            }
+
+            Assert.That(IsHidden(GetPrivateField<VisualElement>(window, "_sceneInfluenceFilterChip")), Is.True);
+            Assert.That(listView.VisibleEntryCount, Is.EqualTo(3));
+            Assert.That(GetFilterCountText(window), Is.EqualTo("3 / 3"));
+            Assert.That(IsHidden(emptyLabel), Is.True);
+            Assert.That(IsHidden(clearFiltersButton), Is.True);
+
+            ClickButton(sceneButton);
+
+            Assert.That(GetPrivateField<bool>(window, "_sceneInfluenceFilterEnabled"), Is.False);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_EmptyWithoutBlendShapes_KeepsDefaultTextWithoutClearButton()
+        {
+            var renderer = CreateDescriptorAvatarRenderer();
+            var window = CreateEditorWindow(() => true);
+            var emptyLabel = GetPrivateField<Label>(window, "_emptyLabel");
+            var clearFiltersButton = GetPrivateField<Button>(window, "_clearFiltersButton");
+
+            SetWindowAvatar(window, renderer);
+
+            Assert.That(GetWindowModel(window), Is.Not.Null);
+            Assert.That(GetWindowModel(window).entries, Is.Empty);
+            Assert.That(IsHidden(emptyLabel), Is.False);
+            Assert.That(emptyLabel.text, Is.EqualTo(FacialExpressionEditorWindow.EmptyListText));
+            Assert.That(IsHidden(clearFiltersButton), Is.True);
+            Assert.That(GetFilterCountText(window), Is.EqualTo("0 / 0"));
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_SuccessMessagesUseNotificationAndWarningsStayInMessageBox()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var clip = CreateClipAsset(folderPath, "Smile", "Smile", 40f);
+            var window = CreateEditorWindow(() => true);
+            var messageBox = GetPrivateField<HelpBox>(window, "_messageBox");
+            Assert.That(messageBox.text, Is.EqualTo("アバターを指定してください。"), "操作を続けるための案内はメッセージ欄に出す");
+            Assert.That(IsHidden(messageBox), Is.False);
+            Assert.That(_notifications, Is.Empty);
+
+            SetWindowAvatar(window, renderer);
+            ChangeClipField(window, clip);
+
+            Assert.That(_notifications, Is.EqualTo(new[] { "クリップを読み込みました。" }));
+            AssertMessageBoxHidden(window);
+
+            InvokeWindowMethod(window, "ApplyPartialImportValues", (IReadOnlyList<PartialImportValue>)new List<PartialImportValue>());
+
+            Assert.That(messageBox.text, Is.EqualTo("取り込むブレンドシェイプを選択してください。"));
+            Assert.That(messageBox.messageType, Is.EqualTo(HelpBoxMessageType.Warning));
+            Assert.That(IsHidden(messageBox), Is.False);
+            Assert.That(_notifications, Has.Count.EqualTo(1), "警告は通知に出さない");
+
+            EditWindowEntry(window, "Smile", 90f);
+            var saved = (bool)InvokeWindowMethod(window, "TrySave");
+
+            Assert.That(saved, Is.True);
+            Assert.That(_notifications.LastOrDefault(), Is.EqualTo("保存しました。"));
+            AssertMessageBoxHidden(window);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_IntermediateKeysWarning_StaysInOutputSettingsWhileEditingClip()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile", "Blink");
+            var twoFrameClip = CreateCurveClipAsset(
+                folderPath,
+                "TwoFrame",
+                "Smile",
+                new AnimationCurve(new Keyframe(0f, 10f), new Keyframe(1f, 80f)));
+            var intermediateClip = CreateCurveClipAsset(
+                folderPath,
+                "Intermediate",
+                "Smile",
+                new AnimationCurve(new Keyframe(0f, 0f), new Keyframe(0.5f, 50f), new Keyframe(1f, 100f)));
+            var plainClip = CreateClipAsset(folderPath, "Plain", "Smile", 40f);
+            var window = CreateEditorWindow(() => true);
+            var outputSettingsMessageBox = GetPrivateField<HelpBox>(window, "_outputSettingsMessageBox");
+            SetWindowAvatar(window, renderer);
+
+            ChangeClipField(window, twoFrameClip);
+
+            Assert.That(_notifications.LastOrDefault(), Is.EqualTo("2 フレームのクリップをウェイト連動モードで読み込みました。"));
+            AssertMessageBoxHidden(window);
+            Assert.That(IsHidden(outputSettingsMessageBox), Is.True, "中間キーがなければ警告を出さない");
+
+            var notificationCount = _notifications.Count;
+            ChangeClipField(window, intermediateClip);
+
+            Assert.That(_notifications, Has.Count.EqualTo(notificationCount + 1), "読み込めたことは通知する");
+            AssertMessageBoxHidden(window);
+            AssertIntermediateKeysWarningShown(outputSettingsMessageBox);
+
+            var model = GetWindowModel(window);
+            var listView = GetPrivateField<BlendShapeListView>(window, "_blendShapeListView");
+            ApplySceneInfluenceFilter(window, GetEntry(model, "Smile"));
+            ExecuteHeaderMenuAction(listView, BlendShapeListView.GetBulkAllExcludedLabel(2));
+            Undo.ClearUndo(model);
+            InvokeWindowMethod(window, "RefreshOutputDecisionUi");
+
+            Assert.That(_notifications.LastOrDefault(), Is.EqualTo("2 件を編集・出力対象外にしました。"));
+            AssertMessageBoxHidden(window);
+            AssertIntermediateKeysWarningShown(outputSettingsMessageBox);
+
+            InvokeWindowMethod(window, "CreateNewSession");
+
+            Assert.That(IsHidden(outputSettingsMessageBox), Is.True, "新規セッションでは出さない");
+
+            ChangeClipField(window, intermediateClip);
+            AssertIntermediateKeysWarningShown(outputSettingsMessageBox);
+            ChangeClipField(window, plainClip);
+
+            Assert.That(_notifications.LastOrDefault(), Is.EqualTo("クリップを読み込みました。"));
+            Assert.That(IsHidden(outputSettingsMessageBox), Is.True, "中間キーのないクリップに切り替えたら出さない");
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_IntermediateKeysWarning_FollowsFrameModeChangeAndUndo()
+        {
+            var folderPath = CreateTemporaryAssetFolder();
+            var renderer = CreateDescriptorAvatarRenderer("Smile", "Blink");
+            var intermediateClip = CreateCurveClipAsset(
+                folderPath,
+                "Intermediate",
+                "Smile",
+                new AnimationCurve(new Keyframe(0f, 0f), new Keyframe(0.5f, 50f), new Keyframe(1f, 100f)));
+            var window = CreateEditorWindow(() => true);
+            var outputSettingsMessageBox = GetPrivateField<HelpBox>(window, "_outputSettingsMessageBox");
+            SetWindowAvatar(window, renderer);
+            ChangeClipField(window, intermediateClip);
+            var model = GetWindowModel(window);
+            try
+            {
+                Assert.That(model.frameMode, Is.EqualTo(ExpressionFrameMode.WeightBlend), "中間キーのあるクリップは 2 フレームとして読み込む");
+                AssertIntermediateKeysWarning(outputSettingsMessageBox, FacialExpressionEditorWindow.IntermediateKeysWarningText);
+
+                InvokeWindowMethod(window, "SetFrameMode", ExpressionFrameMode.SingleFrame);
+                Undo.FlushUndoRecordObjects();
+                InvokeWindowMethod(window, "FlushOutputDecisionUiRefreshIfReady");
+
+                AssertIntermediateKeysWarning(outputSettingsMessageBox, FacialExpressionEditorWindow.IntermediateKeysSingleFrameWarningText);
+                var singleFrameClip = ExpressionClipIO.ToClip(model, "SingleFrame");
+                _temporaryObjects.Add(singleFrameClip);
+                Assert.That(
+                    GetBlendShapeCurve(singleFrameClip, "Face", "Smile").length,
+                    Is.EqualTo(1),
+                    "警告どおり、1 フレームでは未編集の項目も 1 キーで保存される");
+
+                Undo.PerformUndo();
+                InvokeWindowMethod(window, "OnUndoRedoPerformed");
+                InvokeWindowMethod(window, "FlushOutputDecisionUiRefreshIfReady");
+
+                Assert.That(model.frameMode, Is.EqualTo(ExpressionFrameMode.WeightBlend));
+                AssertIntermediateKeysWarning(outputSettingsMessageBox, FacialExpressionEditorWindow.IntermediateKeysWarningText);
+
+                InvokeWindowMethod(window, "SetFrameMode", ExpressionFrameMode.SingleFrame);
+                InvokeWindowMethod(window, "FlushOutputDecisionUiRefreshIfReady");
+
+                AssertIntermediateKeysWarning(outputSettingsMessageBox, FacialExpressionEditorWindow.IntermediateKeysSingleFrameWarningText);
+
+                InvokeWindowMethod(window, "SetFrameMode", ExpressionFrameMode.WeightBlend);
+                InvokeWindowMethod(window, "FlushOutputDecisionUiRefreshIfReady");
+
+                AssertIntermediateKeysWarning(outputSettingsMessageBox, FacialExpressionEditorWindow.IntermediateKeysWarningText);
+            }
+            finally
+            {
+                Undo.ClearUndo(model);
+            }
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_SkinChange_ReappliesSkinClassIconsAndList()
+        {
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var window = CreateEditorWindow(() => true);
+            SetWindowAvatar(window, renderer);
+            var root = window.rootVisualElement;
+            var isProSkin = EditorGUIUtility.isProSkin;
+            var expectedClassName = isProSkin ? ExpressionEditorStyles.DarkSkinClassName : ExpressionEditorStyles.LightSkinClassName;
+            var otherClassName = isProSkin ? ExpressionEditorStyles.LightSkinClassName : ExpressionEditorStyles.DarkSkinClassName;
+            var iconFields = new[]
+            {
+                ("_sceneInfluenceFilterIcon", ExpressionEditorIcons.ScenePick),
+                ("_sceneInfluenceFilterClearIcon", ExpressionEditorIcons.Clear),
+                ("_frameModeInfoIcon", ExpressionEditorIcons.Info),
+                ("_outputModeInfoIcon", ExpressionEditorIcons.Info),
+            };
+            ExpressionEditorStyles.ApplySkinClass(root, !isProSkin);
+            SetPrivateField(window, "_appliedProSkin", (bool?)!isProSkin);
+            foreach (var (fieldName, _) in iconFields)
+            {
+                GetPrivateField<ExpressionEditorIconElement>(window, fieldName).SetIcon(null);
+            }
+
+            var refreshCount = 0;
+            GetPrivateField<BlendShapeListView>(window, "_blendShapeListView").VisibleEntriesChanged += () => refreshCount++;
+
+            InvokeWindowMethod(window, "UpdateSkinClass");
+
+            Assert.That(root.ClassListContains(expectedClassName), Is.True);
+            Assert.That(root.ClassListContains(otherClassName), Is.False);
+            foreach (var (fieldName, expectedIcon) in iconFields)
+            {
+                var icon = GetPrivateField<ExpressionEditorIconElement>(window, fieldName);
+                Assert.That(icon.Icon, Is.SameAs(expectedIcon), fieldName);
+                Assert.That(icon.Texture, Is.Not.Null, fieldName);
+            }
+
+            Assert.That(refreshCount, Is.EqualTo(1), "行のアイコンも付け直すため一覧を作り直す");
+
+            InvokeWindowMethod(window, "UpdateSkinClass");
+
+            Assert.That(refreshCount, Is.EqualTo(1), "スキンが変わらなければ作り直さない");
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_ThumbnailCompletionMessages_UseNotification()
+        {
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var window = CreateEditorWindow(() => true);
+            var messageBox = GetPrivateField<HelpBox>(window, "_messageBox");
+            SetWindowAvatar(window, renderer);
+            var thumbnailCaptureView = GetPrivateField<ThumbnailCaptureView>(window, "_thumbnailCaptureView");
+            var messageRequested = GetPrivateField<System.Action<string, HelpBoxMessageType>>(thumbnailCaptureView, "MessageRequested");
+            Assert.That(messageRequested, Is.Not.Null, "サムネイル撮影欄のメッセージをウィンドウで受け取る");
+
+            messageRequested("割り当てる PNG を指定してください。", HelpBoxMessageType.Warning);
+
+            Assert.That(messageBox.text, Is.EqualTo("割り当てる PNG を指定してください。"));
+            Assert.That(messageBox.messageType, Is.EqualTo(HelpBoxMessageType.Warning));
+            Assert.That(_notifications, Is.Empty, "警告は通知に出さない");
+
+            messageRequested("メニューアイコンに設定しました。", HelpBoxMessageType.Info);
+
+            Assert.That(_notifications, Is.EqualTo(new[] { "メニューアイコンに設定しました。" }));
+            AssertMessageBoxHidden(window);
+
+            InvokeWindowMethod(window, "AutoFrameThumbnail");
+
+            Assert.That(_notifications.LastOrDefault(), Is.EqualTo("距離・角度・オフセットを自動調整しました。"));
+            AssertMessageBoxHidden(window);
+        }
+
+        [Test]
+        public void FacialExpressionEditorWindow_InfoIcons_ReplaceExplanatoryHelpBoxes()
+        {
+            var uxmlRoot = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
+                    "Packages/com.matcha-soft.facial-expression-controller/Editor/UI/Windows/FacialExpressionEditorWindow.uxml")
+                .CloneTree();
+            Assert.That(uxmlRoot.Q(className: "weight-mode-note"), Is.Null);
+            Assert.That(uxmlRoot.Query<HelpBox>().ToList().Select(helpBox => helpBox.name), Is.EqualTo(new[] { "message-box" }));
+
+            var renderer = CreateDescriptorAvatarRenderer("Smile");
+            var window = CreateEditorWindow(() => true);
+            var root = window.rootVisualElement;
+            var frameInfoIcon = GetPrivateField<ExpressionEditorIconElement>(window, "_frameModeInfoIcon");
+            var outputInfoIcon = GetPrivateField<ExpressionEditorIconElement>(window, "_outputModeInfoIcon");
+            var outputSettingsMessageBox = GetPrivateField<HelpBox>(window, "_outputSettingsMessageBox");
+            Assert.That(root.Q(className: "weight-mode-note"), Is.Null);
+            Assert.That(root.Query<HelpBox>().ToList().Select(helpBox => helpBox.text ?? ""), Has.None.Contains("Fist"));
+            Assert.That(frameInfoIcon.Icon, Is.SameAs(ExpressionEditorIcons.Info));
+            Assert.That(frameInfoIcon.tooltip, Is.EqualTo(FacialExpressionEditorWindow.WeightModeNoteText));
+            Assert.That(frameInfoIcon.parent, Is.SameAs(root.Q("frame-mode-container")));
+            Assert.That(frameInfoIcon.parent.Contains(GetPrivateField<VisualElement>(window, "_frameModeField")), Is.True);
+            Assert.That(outputInfoIcon.Icon, Is.SameAs(ExpressionEditorIcons.Info));
+            Assert.That(outputInfoIcon.tooltip, Is.EqualTo(FacialExpressionEditorWindow.DiffOutputNoteText));
+            Assert.That(outputInfoIcon.parent.Contains(GetPrivateField<VisualElement>(window, "_outputModeField")), Is.True);
+            Assert.That(IsHidden(frameInfoIcon), Is.True);
+            Assert.That(IsHidden(outputInfoIcon), Is.True);
+
+            SetWindowAvatar(window, renderer);
+            var model = GetWindowModel(window);
+            try
+            {
+                Assert.That(IsHidden(frameInfoIcon), Is.True, "1 フレームでは出さない");
+
+                InvokeWindowMethod(window, "SetFrameMode", ExpressionFrameMode.WeightBlend);
+
+                Assert.That(IsHidden(frameInfoIcon), Is.False, "2 フレームのときだけ出す");
+
+                InvokeWindowMethod(window, "SetFrameMode", ExpressionFrameMode.SingleFrame);
+
+                Assert.That(IsHidden(frameInfoIcon), Is.True);
+
+                SetPrivateField(window, "_outputMode", BlendShapeOutputMode.SessionBaselineDiff);
+                InvokeWindowMethod(window, "RefreshOutputDecisionUi");
+
+                Assert.That(IsHidden(outputInfoIcon), Is.False);
+                Assert.That(IsHidden(outputSettingsMessageBox), Is.True, "差分出力の説明は HelpBox に出さない");
+
+                SetPrivateField(window, "_outputMode", BlendShapeOutputMode.ReferenceClipDiff);
+                InvokeWindowMethod(window, "RefreshOutputDecisionUi");
+
+                Assert.That(IsHidden(outputInfoIcon), Is.False);
+                Assert.That(IsHidden(outputSettingsMessageBox), Is.False, "設定不備の警告は HelpBox のまま");
+                Assert.That(outputSettingsMessageBox.messageType, Is.EqualTo(HelpBoxMessageType.Warning));
+                Assert.That(outputSettingsMessageBox.text, Is.Not.Empty);
+
+                SetPrivateField(window, "_outputMode", BlendShapeOutputMode.AllTargets);
+                InvokeWindowMethod(window, "RefreshOutputDecisionUi");
+
+                Assert.That(IsHidden(outputInfoIcon), Is.True);
+                Assert.That(IsHidden(outputSettingsMessageBox), Is.True);
+            }
+            finally
+            {
+                Undo.ClearUndo(model);
+            }
+        }
+
+        [Test]
         public void FacialExpressionEditorWindow_SameAvatarOrRenderer_KeepsSessionAndEdits()
         {
             var folderPath = CreateTemporaryAssetFolder();
@@ -589,12 +1201,14 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             AssertUnsavedIndicator(window, true);
             Assert.That(clipField.tooltip, Is.EqualTo(existingFieldTooltip));
 
+            var notificationCount = _notifications.Count;
             InvokeWindowMethod(window, "OnDisable");
             InvokeWindowMethod(window, "OnEnable");
 
             Assert.That(GetPrivateField<ObjectField>(window, "_clipField"), Is.Not.SameAs(clipField));
             AssertUnsavedIndicator(window, true);
-            Assert.That(GetPrivateField<HelpBox>(window, "_messageBox").text, Is.EqualTo("未保存の編集を復元しました。"));
+            Assert.That(_notifications, Has.Count.EqualTo(notificationCount), "未保存はラベルの * で示すため、復元しても通知しない");
+            AssertMessageBoxHidden(window);
 
             InvokeWindowMethod(window, "CreateNewSession");
 
@@ -1047,6 +1661,21 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             return savedClip;
         }
 
+        private static AnimationClip CreateCurveClipAsset(
+            string folderPath,
+            string clipName,
+            string blendShapeName,
+            AnimationCurve curve)
+        {
+            var clip = new AnimationClip { name = clipName };
+            SetBlendShapeCurve(clip, "Face", blendShapeName, curve);
+            var assetPath = $"{folderPath}/{clipName}.anim";
+            AssetDatabase.CreateAsset(clip, assetPath);
+            var savedClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(assetPath);
+            Assert.That(savedClip, Is.Not.Null, $"Clip asset could not be created: {assetPath}");
+            return savedClip;
+        }
+
         private static float GetFirstBlendShapeKeyValue(AnimationClip clip, string blendShapeName)
         {
             Assert.That(clip, Is.Not.Null);
@@ -1078,8 +1707,92 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             var window = ScriptableObject.CreateInstance<FacialExpressionEditorWindow>();
             _temporaryObjects.Add(window);
             window.DiscardUnsavedChangesConfirmation = discardUnsavedChangesConfirmation;
+            window.NotificationPresenter = _notifications.Add;
             Assert.That(GetPrivateField<ObjectField>(window, "_clipField"), Is.Not.Null, "Editor window UI was not built.");
             return window;
+        }
+
+        private static void SetPrivateField(object target, string fieldName, object value)
+        {
+            var field = target.GetType().GetField(
+                fieldName,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null, $"Private field was not found: {target.GetType().FullName}.{fieldName}");
+            field.SetValue(target, value);
+        }
+
+        /// <summary>
+        /// パネルに載っていない要素ではクリックのイベントを送れないため、ボタンに登録されたクリック時の処理を直接呼ぶ。
+        /// </summary>
+        private static void ClickButton(Button button)
+        {
+            Assert.That(button, Is.Not.Null);
+            Assert.That(button.enabledSelf, Is.True, "無効なボタンはクリックできない");
+            var field = typeof(Clickable).GetField(
+                "clicked",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null, "Clickable.clicked was not found.");
+            var clicked = (System.Action)field.GetValue(button.clickable);
+            Assert.That(clicked, Is.Not.Null, "The button has no click handler.");
+            clicked();
+        }
+
+        private static bool IsHidden(VisualElement element)
+        {
+            return element.ClassListContains(ExpressionEditorStyles.HiddenClassName);
+        }
+
+        private static void AssertMessageBoxHidden(FacialExpressionEditorWindow window)
+        {
+            var messageBox = GetPrivateField<HelpBox>(window, "_messageBox");
+            Assert.That(messageBox.text, Is.Empty, "成功の通知を出したら以前のメッセージは消す");
+            Assert.That(IsHidden(messageBox), Is.True);
+        }
+
+        private static void AssertIntermediateKeysWarningShown(HelpBox outputSettingsMessageBox)
+        {
+            Assert.That(IsHidden(outputSettingsMessageBox), Is.False);
+            Assert.That(outputSettingsMessageBox.messageType, Is.EqualTo(HelpBoxMessageType.Warning));
+            Assert.That(outputSettingsMessageBox.text, Does.Contain(FacialExpressionEditorWindow.IntermediateKeysWarningText));
+        }
+
+        private static void AssertIntermediateKeysWarning(HelpBox outputSettingsMessageBox, string expectedWarning)
+        {
+            var otherWarning = expectedWarning == FacialExpressionEditorWindow.IntermediateKeysWarningText
+                ? FacialExpressionEditorWindow.IntermediateKeysSingleFrameWarningText
+                : FacialExpressionEditorWindow.IntermediateKeysWarningText;
+            Assert.That(IsHidden(outputSettingsMessageBox), Is.False);
+            Assert.That(outputSettingsMessageBox.messageType, Is.EqualTo(HelpBoxMessageType.Warning));
+            Assert.That(outputSettingsMessageBox.text, Does.Contain(expectedWarning));
+            Assert.That(outputSettingsMessageBox.text, Does.Not.Contain(otherWarning));
+        }
+
+        private static string GetFilterCountText(FacialExpressionEditorWindow window)
+        {
+            var countLabel = GetPrivateField<Label>(window, "_filterCountLabel");
+            Assert.That(IsHidden(countLabel), Is.False);
+            return countLabel.text;
+        }
+
+        private static void ApplySceneInfluenceFilter(
+            FacialExpressionEditorWindow window,
+            params BlendShapeEntry[] entries)
+        {
+            var hit = new BlendShapeInfluenceHit(Vector3.zero, Vector3.up, 0, 0, 1, 2, Vector3.one / 3f);
+            var results = entries
+                .Select(entry => new BlendShapeInfluenceResult(entry.index, entry.name, 1f, 0.01f))
+                .ToList();
+            InvokeWindowMethod(window, "ApplySceneInfluenceFilter", hit, (IReadOnlyList<BlendShapeInfluenceResult>)results);
+        }
+
+        private static void ExecuteHeaderMenuAction(BlendShapeListView listView, string actionName)
+        {
+            var action = listView.CreateHeaderMenu()
+                .MenuItems()
+                .OfType<DropdownMenuAction>()
+                .Single(item => item.name == actionName);
+            action.Execute();
+            Undo.FlushUndoRecordObjects();
         }
 
         private static object InvokeWindowMethod(FacialExpressionEditorWindow window, string methodName, params object[] arguments)

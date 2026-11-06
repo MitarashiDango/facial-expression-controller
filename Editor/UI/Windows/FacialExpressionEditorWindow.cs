@@ -25,12 +25,30 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private const string OutputModeAllTargetsLabel = "全ての編集・出力対象";
         private const string OutputModeSessionBaselineDiffLabel = "セッション開始時の値との差分";
         private const string OutputModeReferenceClipDiffLabel = "参照クリップとの差分";
-        private const string BulkAllEditableLabel = "すべてのブレンドシェイプを編集・出力対象にする";
-        private const string BulkAllExcludedLabel = "すべてのブレンドシェイプを編集・出力対象外にする";
-        private const string BulkRestoreEditingStartLabel = "編集開始時点の状態に戻す";
         internal const string ClipFieldLabel = "編集中のクリップ";
         internal const string UnsavedLabelSuffix = "*";
         internal const string UnsavedChangesTooltip = "未保存の変更があります";
+        internal const string ChangedOnlyFilterLabel = "変更あり";
+        internal const string EditableOnlyFilterLabel = "対象のみ";
+        internal const string OutputOnlyFilterLabel = "出力予定";
+        internal const string ChangedOnlyFilterTooltip = "変更された項目のみ表示";
+        internal const string EditableOnlyFilterTooltip = "編集・出力対象のみ表示";
+        internal const string OutputOnlyFilterTooltip = "出力予定のみ表示";
+        internal const string SceneInfluenceFilterTooltip =
+            "シーンから絞り込み: Scene View でクリックした位置に影響するブレンドシェイプだけを表示します。";
+        internal const string ClearSceneInfluenceFilterTooltip = "クリック位置による絞り込みを解除します。";
+        internal const string FilterCountTooltip = "表示中の件数 / 全件数";
+        internal const string EmptyListText = "表示できるブレンドシェイプがありません。";
+        internal const string FilteredEmptyListText = "絞り込みの条件に一致するブレンドシェイプがありません。";
+        internal const string ClearFiltersLabel = "絞り込みを解除";
+        internal const string ClearFiltersTooltip = "検索文字・表示フィルター・クリック位置による絞り込みをすべて解除します。";
+        internal const string WeightModeNoteText =
+            "Fist はトリガー量にリアルタイム連動します。他ジェスチャーや表情固定中・メニュー選択中は、既存メニューの「表情固定時の表情ウェイト」で調整されます。";
+        internal const string DiffOutputNoteText = "差分なしのブレンドシェイプカーブは保存時に省略されます。";
+        internal const string IntermediateKeysWarningText =
+            "3 つ以上のキーを持つクリップです。未編集の項目は元カーブを保持し、編集した項目は始端と終端の直線カーブとして保存されます。";
+        internal const string IntermediateKeysSingleFrameWarningText =
+            "3 つ以上のキーを持つクリップです。1 フレームで保存すると、未編集の項目も元カーブを保持せず 1 キーのカーブとして保存されます。";
         private static readonly List<string> FrameModeChoices = new List<string> { SingleFrameModeLabel, WeightBlendModeLabel };
         private static readonly List<string> OutputModeChoices = new List<string>
         {
@@ -46,16 +64,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private PopupField<string> _outputModeField;
         private ObjectField _referenceClipField;
         private ToolbarSearchField _searchField;
-        private ToolbarMenu _filterMenu;
-        private ToolbarMenu _bulkTargetMenu;
-        private ToolbarToggle _sceneInfluenceFilterToggle;
-        private Button _clearSceneInfluenceFilterButton;
-        private Label _sceneInfluenceFilterStatusLabel;
+        private Button _changedOnlyFilterChip;
+        private Button _editableOnlyFilterChip;
+        private Button _outputOnlyFilterChip;
+        private Button _sceneInfluenceFilterButton;
+        private ExpressionEditorIconElement _sceneInfluenceFilterIcon;
+        private VisualElement _sceneInfluenceFilterChip;
+        private Label _sceneInfluenceFilterChipLabel;
+        private Button _sceneInfluenceFilterClearButton;
+        private ExpressionEditorIconElement _sceneInfluenceFilterClearIcon;
+        private Label _filterCountLabel;
+        private Button _clearFiltersButton;
+        private ExpressionEditorIconElement _frameModeInfoIcon;
+        private ExpressionEditorIconElement _outputModeInfoIcon;
         private Toggle _previewToggle;
         private Button _newButton;
         private Button _saveButton;
         private Button _saveAsButton;
-        private Button _resetButton;
         private Button _startFrameButton;
         private Button _endFrameButton;
         private Button _loadStartFromRendererButton;
@@ -93,6 +118,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private IReadOnlyDictionary<int, BlendShapeInfluenceResult> _sceneInfluenceResults;
         private BlendShapeInfluenceHit _sceneInfluenceHit;
         private bool _guiBuildRetryScheduled;
+        private bool? _appliedProSkin;
         private double _lastPreviewRequestTime;
         private int _partialImportPreviewRequestVersion;
         private double _partialImportPreviewCaptureReadyTime;
@@ -105,6 +131,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// テストでダイアログを表示せずに確認結果を差し替えるためのもので、通常の処理からは変更しない。
         /// </summary>
         internal Func<bool> DiscardUnsavedChangesConfirmation { get; set; } = ShowDiscardUnsavedChangesDialog;
+
+        /// <summary>
+        /// 成功・完了の通知を表示する処理。null の場合は <see cref="EditorWindow.ShowNotification(GUIContent)"/> で表示する。
+        /// テストで通知の内容を確認するためのもので、通常の処理からは変更しない。
+        /// </summary>
+        internal Action<string> NotificationPresenter { get; set; }
 
         [MenuItem("Tools/Facial Expression Controller/表情アニメーションエディター")]
         public static void Open()
@@ -227,6 +259,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             LanguagePrefs.ApplyFontPreferences(root);
             rootVisualElement.Add(root);
+            UpdateSkinClass();
 
             var targetContainer = root.Q<VisualElement>("target-container");
             var toolbarContainer = root.Q<VisualElement>("toolbar-container");
@@ -272,11 +305,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _newButton = new Button(CreateNewSession) { text = "新規" };
             _saveButton = new Button(Save) { text = "保存" };
             _saveAsButton = new Button(SaveAs) { text = "別名保存" };
-            _resetButton = new Button(ResetValues) { text = "リセット" };
             toolbarContainer.Add(_newButton);
             toolbarContainer.Add(_saveButton);
             toolbarContainer.Add(_saveAsButton);
-            toolbarContainer.Add(_resetButton);
 
             _previewToggle = new Toggle("プレビュー")
             {
@@ -301,6 +332,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _frameModeField.labelElement.style.flexShrink = 0f;
             _frameModeField.RegisterValueChangedCallback(evt => SetFrameMode(GetFrameModeFromLabel(evt.newValue)));
             frameModeContainer.Add(_frameModeField);
+
+            _frameModeInfoIcon = CreateInfoIcon(WeightModeNoteText);
+            _frameModeInfoIcon.AddToClassList("frame-mode-info-icon");
+            frameModeContainer.Add(_frameModeInfoIcon);
 
             _startFrameButton = new Button(() => SetEditingFrame(ExpressionEditFrame.Start, true)) { text = "始点" };
             _startFrameButton.AddToClassList("frame-tab-button");
@@ -328,75 +363,16 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             BuildOutputSettingsControls(outputSettingsContainer);
 
-            var filterContainer = root.Q<VisualElement>("filter-container");
-            var filterPrimaryRow = new VisualElement();
-            filterPrimaryRow.AddToClassList("filter-primary-row");
-            filterContainer.Add(filterPrimaryRow);
-
-            var filterSceneRow = new VisualElement();
-            filterSceneRow.AddToClassList("filter-scene-row");
-            filterContainer.Add(filterSceneRow);
-
-            _searchField = new ToolbarSearchField();
-            _searchField.AddToClassList("search-field");
-            _searchField.RegisterValueChangedCallback(evt => _blendShapeListView?.SetSearchText(evt.newValue));
-            filterPrimaryRow.Add(_searchField);
-
-            _filterMenu = new ToolbarMenu();
-            _filterMenu.AddToClassList("filter-menu");
-            _filterMenu.menu.AppendAction("変更された項目のみ表示", _ => ToggleChangedOnlyFilter(), GetChangedOnlyFilterStatus);
-            _filterMenu.menu.AppendAction("編集・出力対象のみ表示", _ => ToggleEditableOnlyFilter(), GetEditableOnlyFilterStatus);
-            _filterMenu.menu.AppendAction("出力予定のみ表示", _ => ToggleOutputOnlyFilter(), GetOutputOnlyFilterStatus);
-            UpdateFilterMenuText();
-            filterPrimaryRow.Add(_filterMenu);
-
-            _bulkTargetMenu = new ToolbarMenu
-            {
-                text = "一括変更",
-                tooltip = "検索や表示フィルターにかかわらず、すべてのブレンドシェイプへ適用します。",
-            };
-            _bulkTargetMenu.AddToClassList("bulk-target-menu");
-            _bulkTargetMenu.menu.AppendAction(
-                BulkAllEditableLabel,
-                _ => ApplyBulkEditableTargetAction(BlendShapeBulkEditableTargetAction.AllEditable),
-                GetBulkEditableTargetActionStatus);
-            _bulkTargetMenu.menu.AppendAction(
-                BulkAllExcludedLabel,
-                _ => ApplyBulkEditableTargetAction(BlendShapeBulkEditableTargetAction.AllExcluded),
-                GetBulkEditableTargetActionStatus);
-            _bulkTargetMenu.menu.AppendAction(
-                BulkRestoreEditingStartLabel,
-                _ => ApplyBulkEditableTargetAction(BlendShapeBulkEditableTargetAction.RestoreEditingStart),
-                GetBulkEditableTargetActionStatus);
-            filterPrimaryRow.Add(_bulkTargetMenu);
-
-            _sceneInfluenceFilterToggle = new ToolbarToggle
-            {
-                text = "シーンから絞り込み",
-                tooltip = "Scene View でクリックした位置に影響するブレンドシェイプだけを表示します。",
-            };
-            _sceneInfluenceFilterToggle.AddToClassList("scene-influence-toggle");
-            _sceneInfluenceFilterToggle.RegisterValueChangedCallback(evt => SetSceneInfluenceFilterEnabled(evt.newValue));
-            filterSceneRow.Add(_sceneInfluenceFilterToggle);
-
-            _clearSceneInfluenceFilterButton = new Button(() => ClearSceneInfluenceFilter(true))
-            {
-                text = "位置フィルタ解除",
-                tooltip = "クリック位置による絞り込みを解除します。",
-            };
-            _clearSceneInfluenceFilterButton.AddToClassList("scene-influence-clear-button");
-            filterSceneRow.Add(_clearSceneInfluenceFilterButton);
-
-            _sceneInfluenceFilterStatusLabel = new Label();
-            _sceneInfluenceFilterStatusLabel.AddToClassList("scene-influence-status");
-            filterSceneRow.Add(_sceneInfluenceFilterStatusLabel);
-            UpdateSceneInfluenceFilterStatus();
+            BuildFilterControls(root.Q<VisualElement>("filter-container"));
+            BuildEmptyStateControls(root.Q<VisualElement>("empty-state"));
+            RefreshIcons();
+            UpdateFilterBar();
 
             _thumbnailCaptureView = new ThumbnailCaptureView(thumbnailContainer);
             _thumbnailCaptureView.AutoFrameRequested += AutoFrameThumbnail;
             _thumbnailCaptureView.PreviewRequested += PreviewThumbnail;
             _thumbnailCaptureView.CaptureRequested += CaptureThumbnail;
-            _thumbnailCaptureView.MessageRequested += ShowMessage;
+            _thumbnailCaptureView.MessageRequested += OnThumbnailCaptureMessageRequested;
 
             _partialImportView = new PartialImportView(partialImportContainer);
             _partialImportView.ApplyRequested += ApplyPartialImportValues;
@@ -442,6 +418,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
             });
             outputSettingsRow.Add(_outputModeField);
 
+            _outputModeInfoIcon = CreateInfoIcon(DiffOutputNoteText);
+            _outputModeInfoIcon.AddToClassList("output-mode-info-icon");
+            outputSettingsRow.Add(_outputModeInfoIcon);
+
             _referenceClipField = new ObjectField("参照 AnimationClip")
             {
                 objectType = typeof(AnimationClip),
@@ -470,6 +450,127 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _outputSettingsMessageBox.AddToClassList("output-settings-message");
             _outputSettingsMessageBox.AddToClassList("hidden");
             outputSettingsContainer.Add(_outputSettingsMessageBox);
+        }
+
+        /// <summary>
+        /// 補足説明を tooltip で示す ⓘ アイコンを作る。初期状態は非表示。
+        /// </summary>
+        private static ExpressionEditorIconElement CreateInfoIcon(string tooltip)
+        {
+            var icon = new ExpressionEditorIconElement
+            {
+                tooltip = tooltip,
+            };
+            icon.AddToClassList("info-icon");
+            icon.AddToClassList(ExpressionEditorStyles.HiddenClassName);
+            icon.SetIcon(ExpressionEditorIcons.Info);
+            return icon;
+        }
+
+        /// <summary>
+        /// 絞り込み行を作る。検索欄・表示フィルターのチップ・シーンから絞り込むボタン・位置フィルタのチップを
+        /// 1 行に並べ（幅が足りないときは折り返す）、右端に表示数を置く。
+        /// </summary>
+        private void BuildFilterControls(VisualElement filterContainer)
+        {
+            if (filterContainer == null)
+            {
+                return;
+            }
+
+            filterContainer.Clear();
+
+            var filterItems = new VisualElement();
+            filterItems.AddToClassList("filter-items");
+            filterContainer.Add(filterItems);
+
+            _searchField = new ToolbarSearchField();
+            _searchField.AddToClassList("search-field");
+            _searchField.RegisterValueChangedCallback(evt => _blendShapeListView?.SetSearchText(evt.newValue));
+            filterItems.Add(_searchField);
+
+            _changedOnlyFilterChip = CreateFilterChip(ChangedOnlyFilterLabel, ChangedOnlyFilterTooltip, ToggleChangedOnlyFilter);
+            filterItems.Add(_changedOnlyFilterChip);
+            _editableOnlyFilterChip = CreateFilterChip(EditableOnlyFilterLabel, EditableOnlyFilterTooltip, ToggleEditableOnlyFilter);
+            filterItems.Add(_editableOnlyFilterChip);
+            _outputOnlyFilterChip = CreateFilterChip(OutputOnlyFilterLabel, OutputOnlyFilterTooltip, ToggleOutputOnlyFilter);
+            filterItems.Add(_outputOnlyFilterChip);
+
+            _sceneInfluenceFilterButton = new Button(ToggleSceneInfluenceFilterEnabled)
+            {
+                tooltip = SceneInfluenceFilterTooltip,
+            };
+            _sceneInfluenceFilterButton.AddToClassList("filter-icon-button");
+            _sceneInfluenceFilterIcon = new ExpressionEditorIconElement();
+            _sceneInfluenceFilterIcon.SetPickingModeIgnore();
+            _sceneInfluenceFilterButton.Add(_sceneInfluenceFilterIcon);
+            filterItems.Add(_sceneInfluenceFilterButton);
+
+            _sceneInfluenceFilterChip = new VisualElement();
+            _sceneInfluenceFilterChip.AddToClassList("filter-chip");
+            _sceneInfluenceFilterChip.AddToClassList("filter-location-chip");
+            _sceneInfluenceFilterChip.AddToClassList(ExpressionEditorStyles.SelectedClassName);
+            _sceneInfluenceFilterChip.AddToClassList(ExpressionEditorStyles.HiddenClassName);
+            filterItems.Add(_sceneInfluenceFilterChip);
+
+            _sceneInfluenceFilterChipLabel = new Label();
+            _sceneInfluenceFilterChipLabel.AddToClassList("filter-location-chip__label");
+            _sceneInfluenceFilterChip.Add(_sceneInfluenceFilterChipLabel);
+
+            _sceneInfluenceFilterClearButton = new Button(() => ClearSceneInfluenceFilter(true))
+            {
+                tooltip = ClearSceneInfluenceFilterTooltip,
+            };
+            _sceneInfluenceFilterClearButton.AddToClassList("filter-chip-clear-button");
+            _sceneInfluenceFilterClearIcon = new ExpressionEditorIconElement();
+            _sceneInfluenceFilterClearIcon.SetPickingModeIgnore();
+            _sceneInfluenceFilterClearButton.Add(_sceneInfluenceFilterClearIcon);
+            _sceneInfluenceFilterChip.Add(_sceneInfluenceFilterClearButton);
+
+            _filterCountLabel = new Label
+            {
+                tooltip = FilterCountTooltip,
+            };
+            _filterCountLabel.AddToClassList("filter-count");
+            filterContainer.Add(_filterCountLabel);
+        }
+
+        private static Button CreateFilterChip(string text, string tooltip, Action clicked)
+        {
+            var chip = new Button(clicked)
+            {
+                text = text,
+                tooltip = tooltip,
+            };
+            chip.AddToClassList("filter-chip");
+            chip.AddToClassList("filter-toggle-chip");
+            return chip;
+        }
+
+        /// <summary>
+        /// 0 件表示に「絞り込みを解除」ボタンを加える。ボタンは絞り込みが原因で 0 件のときだけ表示する。
+        /// </summary>
+        private void BuildEmptyStateControls(VisualElement emptyState)
+        {
+            _clearFiltersButton = new Button(ClearAllFilters)
+            {
+                text = ClearFiltersLabel,
+                tooltip = ClearFiltersTooltip,
+            };
+            _clearFiltersButton.AddToClassList("clear-filters-button");
+            _clearFiltersButton.AddToClassList(ExpressionEditorStyles.HiddenClassName);
+            (emptyState ?? _emptyLabel?.parent)?.Add(_clearFiltersButton);
+        }
+
+        /// <summary>
+        /// ウィンドウ上の組み込みアイコンを、現在のエディタースキンのものにする。
+        /// </summary>
+        private void RefreshIcons()
+        {
+            _sceneInfluenceFilterIcon?.SetIcon(ExpressionEditorIcons.ScenePick);
+            _sceneInfluenceFilterClearIcon?.SetIcon(ExpressionEditorIcons.Clear);
+            _frameModeInfoIcon?.SetIcon(ExpressionEditorIcons.Info);
+            _outputModeInfoIcon?.SetIcon(ExpressionEditorIcons.Info);
         }
 
         private void ScheduleBuildGuiRetry()
@@ -546,7 +647,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             RefreshOutputDecisionUi();
             UpdateButtonStates();
             RequestPreview();
-            ShowMessage(hasUnsavedChanges ? "未保存の編集を復元しました。" : "", HelpBoxMessageType.Info);
+
+            // 未保存の編集はクリップ欄のラベルとタブ名の * で示しているため、復元したことは通知しない。
+            ShowMessage("", HelpBoxMessageType.Info);
         }
 
         /// <summary>
@@ -668,7 +771,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             SetModel(avatarRootObject, renderer);
             SetUnsavedChanges(false);
-            ShowMessage("新規セッションを開始しました。", HelpBoxMessageType.Info);
+            ShowSuccess("新規セッションを開始しました。");
             return true;
         }
 
@@ -735,17 +838,15 @@ namespace MitarashiDango.FacialExpressionController.Editor
             SetModel(avatarRootObject, renderer, loadedModel, clip);
             SetUnsavedChanges(false);
 
-            if (_model != null && _model.hasIntermediateKeys)
+            // 3 つ以上のキーを持つクリップの警告は、セッション中ずっと当てはまるため出力設定の HelpBox に出す
+            // （UpdateOutputSettingsMessage）。ここでは読み込めたことだけを通知する。
+            if (_loadedSourceFrameMode == ExpressionFrameMode.WeightBlend)
             {
-                ShowMessage("3 つ以上のキーを持つクリップです。未編集の項目は元カーブを保持し、編集した項目は始端と終端の直線カーブとして保存されます。", HelpBoxMessageType.Warning);
-            }
-            else if (_loadedSourceFrameMode == ExpressionFrameMode.WeightBlend)
-            {
-                ShowMessage("2 フレームのクリップをウェイト連動モードで読み込みました。", HelpBoxMessageType.Info);
+                ShowSuccess("2 フレームのクリップをウェイト連動モードで読み込みました。");
             }
             else
             {
-                ShowMessage("クリップを読み込みました。", HelpBoxMessageType.Info);
+                ShowSuccess("クリップを読み込みました。");
             }
 
             return true;
@@ -876,6 +977,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             if (_model == null)
             {
                 _emptyLabel?.EnableInClassList("hidden", false);
+                UpdateFilterBar();
                 return;
             }
 
@@ -883,17 +985,18 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _blendShapeListView.Changed += OnModelChanged;
             _blendShapeListView.PreviewValueChanged += OnBlendShapePreviewValueChanged;
             _blendShapeListView.PreviewResetRequested += OnBlendShapePreviewResetRequested;
+            _blendShapeListView.BulkEditableTargetActionApplied += OnBulkEditableTargetActionApplied;
+            _blendShapeListView.VisibleEntriesChanged += UpdateListCountAndEmptyState;
             _blendShapeListView.SetEditingFrame(_editingFrame);
-            _blendShapeListView.SetSearchText(_searchField != null ? _searchField.value : "");
-            _blendShapeListView.SetShowChangedOnly(_showChangedOnly);
-            _blendShapeListView.SetShowEditableOnly(_showEditableOnly);
-            _blendShapeListView.SetShowOutputOnly(_showOutputOnly);
-            if (_sceneInfluenceResults != null)
-            {
-                _blendShapeListView.SetSpatialInfluenceFilter(_sceneInfluenceResults);
-            }
+            _blendShapeListView.SetFilters(
+                _searchField != null ? _searchField.value : "",
+                _showChangedOnly,
+                _showEditableOnly,
+                _showOutputOnly,
+                _sceneInfluenceResults);
 
             RefreshOutputDecisionUi();
+            UpdateFilterBar();
         }
 
         private void OnModelChanged()
@@ -912,11 +1015,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             StopPreview();
             _partialImportView?.Refresh();
-        }
-
-        private void ResetValues()
-        {
-            _blendShapeListView?.ResetEditableValues();
         }
 
         private void SetFrameMode(ExpressionFrameMode frameMode)
@@ -1012,7 +1110,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _blendShapeListView?.Refresh();
             MarkUnsaved();
             RequestPreview();
-            ShowMessage("始点へ現在の Skinned Mesh Renderer 値を読み込みました。", HelpBoxMessageType.Info);
+            ShowSuccess("始点へ現在の Skinned Mesh Renderer 値を読み込みました。");
         }
 
         private void ApplyPartialImportValues(IReadOnlyList<PartialImportValue> values)
@@ -1049,7 +1147,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _partialImportView?.Refresh();
             MarkUnsaved();
             RequestPreview();
-            ShowMessage($"{appliedCount} 件のブレンドシェイプを取り込みました。", HelpBoxMessageType.Info);
+            ShowSuccess($"{appliedCount} 件のブレンドシェイプを取り込みました。");
         }
 
         private int ApplyPartialImportValuesToModel(ExpressionEditModel targetModel, IReadOnlyList<PartialImportValue> values)
@@ -1673,21 +1771,26 @@ namespace MitarashiDango.FacialExpressionController.Editor
         {
             _showChangedOnly = !_showChangedOnly;
             _blendShapeListView?.SetShowChangedOnly(_showChangedOnly);
-            UpdateFilterMenuText();
+            UpdateFilterBar();
         }
 
         private void ToggleEditableOnlyFilter()
         {
             _showEditableOnly = !_showEditableOnly;
             _blendShapeListView?.SetShowEditableOnly(_showEditableOnly);
-            UpdateFilterMenuText();
+            UpdateFilterBar();
         }
 
         private void ToggleOutputOnlyFilter()
         {
             _showOutputOnly = !_showOutputOnly;
             _blendShapeListView?.SetShowOutputOnly(_showOutputOnly);
-            UpdateFilterMenuText();
+            UpdateFilterBar();
+        }
+
+        private void ToggleSceneInfluenceFilterEnabled()
+        {
+            SetSceneInfluenceFilterEnabled(!_sceneInfluenceFilterEnabled);
         }
 
         private void SetSceneInfluenceFilterEnabled(bool enabled)
@@ -1695,7 +1798,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             var canEnable = enabled && CanUseSceneInfluenceFilter();
             if (_sceneInfluenceFilterEnabled == canEnable)
             {
-                _sceneInfluenceFilterToggle?.SetValueWithoutNotify(canEnable);
+                UpdateFilterBar();
                 return;
             }
 
@@ -1705,7 +1808,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _sceneInfluenceMouseDownConsumed = false;
             }
 
-            _sceneInfluenceFilterToggle?.SetValueWithoutNotify(_sceneInfluenceFilterEnabled);
+            UpdateFilterBar();
             if (_sceneInfluenceFilterEnabled)
             {
                 SceneView.duringSceneGui -= OnSceneViewDuringSceneGui;
@@ -1739,13 +1842,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _sceneInfluenceResults = null;
             _sceneInfluenceHit = null;
             _blendShapeListView?.ClearSpatialInfluenceFilter();
-            UpdateSceneInfluenceFilterStatus();
-            UpdateFilterMenuText();
+            UpdateFilterBar();
             SceneView.RepaintAll();
 
             if (showMessage && hadFilter)
             {
-                ShowMessage("位置フィルタを解除しました。", HelpBoxMessageType.Info);
+                ShowSuccess("位置フィルタを解除しました。");
             }
         }
 
@@ -1758,8 +1860,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 ? results.ToDictionary(result => result.BlendShapeIndex)
                 : new Dictionary<int, BlendShapeInfluenceResult>();
             _blendShapeListView?.SetSpatialInfluenceFilter(_sceneInfluenceResults);
-            UpdateSceneInfluenceFilterStatus();
-            UpdateFilterMenuText();
+            UpdateFilterBar();
             SceneView.RepaintAll();
 
             var count = _sceneInfluenceResults.Count;
@@ -1769,22 +1870,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            ShowMessage($"{count} 件のブレンドシェイプをクリック位置で絞り込みました。", HelpBoxMessageType.Info);
-        }
-
-        private void UpdateSceneInfluenceFilterStatus()
-        {
-            if (_sceneInfluenceFilterStatusLabel != null)
-            {
-                var hasFilter = _sceneInfluenceResults != null;
-                var count = hasFilter ? _sceneInfluenceResults.Count : 0;
-                var statusText = hasFilter ? $"位置フィルタ: {count} 件" : "";
-                _sceneInfluenceFilterStatusLabel.text = statusText;
-                _sceneInfluenceFilterStatusLabel.tooltip = statusText;
-                _sceneInfluenceFilterStatusLabel.EnableInClassList("hidden", !hasFilter);
-            }
-
-            _clearSceneInfluenceFilterButton?.SetEnabled(_sceneInfluenceResults != null);
+            ShowSuccess($"{count} 件のブレンドシェイプをクリック位置で絞り込みました。");
         }
 
         private void DisposeSceneInfluenceProbeContext()
@@ -1793,38 +1879,91 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _sceneInfluenceProbeContext = null;
         }
 
-        private DropdownMenuAction.Status GetChangedOnlyFilterStatus(DropdownMenuAction action)
+        /// <summary>
+        /// 検索文字・表示フィルターのチップ・位置フィルタをすべて解除する。0 件表示の「絞り込みを解除」ボタンから呼ぶ。
+        /// シーンから絞り込むモード自体（クリック待ち）は切り替えない。
+        /// </summary>
+        private void ClearAllFilters()
         {
-            return _showChangedOnly ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal;
+            _searchField?.SetValueWithoutNotify("");
+            _showChangedOnly = false;
+            _showEditableOnly = false;
+            _showOutputOnly = false;
+
+            // 一覧の作り直しは 1 回にする。位置フィルタは一覧側で先に外すため、下の ClearSceneInfluenceFilter では作り直さない。
+            _blendShapeListView?.SetFilters("", false, false, false, null);
+            ClearSceneInfluenceFilter(false);
+            UpdateFilterBar();
         }
 
-        private DropdownMenuAction.Status GetEditableOnlyFilterStatus(DropdownMenuAction action)
+        /// <summary>
+        /// 絞り込み行の表示（チップのオン／オフ、シーンから絞り込むボタン、位置フィルタのチップ）と、
+        /// 表示数・0 件時の表示を現在の状態に合わせる。
+        /// </summary>
+        private void UpdateFilterBar()
         {
-            return _showEditableOnly ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal;
-        }
+            _changedOnlyFilterChip?.EnableInClassList(ExpressionEditorStyles.SelectedClassName, _showChangedOnly);
+            _editableOnlyFilterChip?.EnableInClassList(ExpressionEditorStyles.SelectedClassName, _showEditableOnly);
+            _outputOnlyFilterChip?.EnableInClassList(ExpressionEditorStyles.SelectedClassName, _showOutputOnly);
+            _sceneInfluenceFilterButton?.EnableInClassList(ExpressionEditorStyles.SelectedClassName, _sceneInfluenceFilterEnabled);
 
-        private DropdownMenuAction.Status GetOutputOnlyFilterStatus(DropdownMenuAction action)
-        {
-            return _showOutputOnly ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal;
-        }
-
-        private DropdownMenuAction.Status GetBulkEditableTargetActionStatus(DropdownMenuAction action)
-        {
-            return _model != null && _blendShapeListView != null
-                ? DropdownMenuAction.Status.Normal
-                : DropdownMenuAction.Status.Disabled;
-        }
-
-        private void ApplyBulkEditableTargetAction(BlendShapeBulkEditableTargetAction action)
-        {
-            if (_model == null || _blendShapeListView == null)
+            if (_sceneInfluenceFilterChip != null)
             {
-                return;
+                var hasLocationFilter = _sceneInfluenceResults != null;
+                var count = hasLocationFilter ? _sceneInfluenceResults.Count : 0;
+                _sceneInfluenceFilterChipLabel.text = $"位置 {count}";
+                _sceneInfluenceFilterChip.tooltip = $"クリック位置に影響する {count} 件のブレンドシェイプで絞り込んでいます。";
+                _sceneInfluenceFilterChip.EnableInClassList(ExpressionEditorStyles.HiddenClassName, !hasLocationFilter);
             }
 
-            var result = _blendShapeListView.ApplyBulkEditableTargetAction(action);
-            var message = GetBulkEditableTargetResultMessage(action, result);
-            ShowMessage(message, HelpBoxMessageType.Info);
+            UpdateListCountAndEmptyState();
+        }
+
+        /// <summary>
+        /// 絞り込み行の右端の「表示数 / 全数」と、0 件時の表示を一覧の状態に合わせる。
+        /// 絞り込みが原因で 0 件のときは、0 件表示の文言を変えて「絞り込みを解除」ボタンを出す。
+        /// 編集中の表情がない場合や、ブレンドシェイプが 1 件もない場合はボタンを出さない。
+        /// </summary>
+        private void UpdateListCountAndEmptyState()
+        {
+            var listView = _blendShapeListView;
+            var totalCount = listView != null ? listView.TotalEntryCount : 0;
+            var visibleCount = listView != null ? listView.VisibleEntryCount : 0;
+            if (_filterCountLabel != null)
+            {
+                _filterCountLabel.text = listView != null ? $"{visibleCount} / {totalCount}" : "";
+                _filterCountLabel.EnableInClassList(ExpressionEditorStyles.HiddenClassName, listView == null);
+            }
+
+            var isEmptyByFilter = listView != null
+                && visibleCount == 0
+                && totalCount > 0
+                && HasActiveListFilter();
+            if (_emptyLabel != null)
+            {
+                _emptyLabel.text = isEmptyByFilter ? FilteredEmptyListText : EmptyListText;
+            }
+
+            _clearFiltersButton?.EnableInClassList(ExpressionEditorStyles.HiddenClassName, !isEmptyByFilter);
+        }
+
+        private bool HasActiveListFilter()
+        {
+            return (_searchField != null && !string.IsNullOrWhiteSpace(_searchField.value))
+                || _showChangedOnly
+                || _showEditableOnly
+                || _showOutputOnly
+                || _sceneInfluenceResults != null;
+        }
+
+        /// <summary>
+        /// 一覧ヘッダーのメニューから実行した一括変更の結果を通知する。
+        /// </summary>
+        private void OnBulkEditableTargetActionApplied(
+            BlendShapeBulkEditableTargetAction action,
+            BlendShapeBulkEditableTargetResult result)
+        {
+            ShowSuccess(GetBulkEditableTargetResultMessage(action, result));
         }
 
         private static string GetBulkEditableTargetResultMessage(
@@ -1860,20 +1999,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             return message;
-        }
-
-        private void UpdateFilterMenuText()
-        {
-            if (_filterMenu == null)
-            {
-                return;
-            }
-
-            var activeFilterCount = (_showChangedOnly ? 1 : 0)
-                + (_showEditableOnly ? 1 : 0)
-                + (_showOutputOnly ? 1 : 0)
-                + (_sceneInfluenceResults != null ? 1 : 0);
-            _filterMenu.text = activeFilterCount > 0 ? $"絞り込み ({activeFilterCount})" : "絞り込み";
         }
 
         private void Save()
@@ -1922,7 +2047,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             SetCurrentClip(savedClip);
             SetUnsavedChanges(false);
-            ShowMessage("保存しました。", HelpBoxMessageType.Info);
+            ShowSuccess("保存しました。");
             return true;
         }
 
@@ -1977,7 +2102,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             SetCurrentClip(savedClip);
             SetUnsavedChanges(false);
-            ShowMessage("保存しました。", HelpBoxMessageType.Info);
+            ShowSuccess("保存しました。");
             return true;
         }
 
@@ -2225,10 +2350,20 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return $"保全カーブ: {preservedCurveCount} / ObjectReference: {preservedObjectReferenceCurveCount}";
         }
 
+        /// <summary>
+        /// 出力設定の警告（設定不備・参照クリップの中間キー・編集中のクリップの中間キー）を HelpBox に表示する。
+        /// 編集中のクリップの中間キーの警告は、そのクリップを編集している間は常に表示する。
+        /// 文言は、今のフレームモードで元カーブを保持できるかによって出し分ける。
+        /// 差分出力の補足説明は HelpBox ではなく、出力範囲の横の ⓘ アイコンの tooltip で示す。
+        /// </summary>
         private void UpdateOutputSettingsMessage(
             IReadOnlyList<BlendShapeOutputDecision> decisions,
             string validationMessage)
         {
+            _outputModeInfoIcon?.EnableInClassList(
+                ExpressionEditorStyles.HiddenClassName,
+                _outputMode == BlendShapeOutputMode.AllTargets);
+
             if (_outputSettingsMessageBox == null)
             {
                 return;
@@ -2241,28 +2376,40 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            var message = "";
-            var messageType = HelpBoxMessageType.Info;
+            var warnings = new List<string>();
             if (!string.IsNullOrEmpty(validationMessage))
             {
-                message = validationMessage;
-                messageType = HelpBoxMessageType.Warning;
+                warnings.Add(validationMessage);
             }
             else if (_outputMode == BlendShapeOutputMode.ReferenceClipDiff
                 && ExpressionOutputDiffService.Summarize(decisions).intermediateKeyCount > 0)
             {
-                message = "参照クリップに中間キーがあります。差分判定には始端と終端のみを使用します。";
-                messageType = HelpBoxMessageType.Warning;
-            }
-            else if (_outputMode != BlendShapeOutputMode.AllTargets)
-            {
-                message = "差分なしのブレンドシェイプカーブは保存時に省略されます。";
-                messageType = HelpBoxMessageType.Info;
+                warnings.Add("参照クリップに中間キーがあります。差分判定には始端と終端のみを使用します。");
             }
 
+            if (_model.hasIntermediateKeys)
+            {
+                warnings.Add(CanKeepAnySourceCurve()
+                    ? IntermediateKeysWarningText
+                    : IntermediateKeysSingleFrameWarningText);
+            }
+
+            var message = string.Join("\n", warnings);
             _outputSettingsMessageBox.text = message;
-            _outputSettingsMessageBox.messageType = messageType;
+            _outputSettingsMessageBox.messageType = HelpBoxMessageType.Warning;
             _outputSettingsMessageBox.EnableInClassList("hidden", string.IsNullOrEmpty(message));
+        }
+
+        /// <summary>
+        /// 今のフレームモードで保存したときに、読み込み元のカーブを保持できる項目があるかを返す。
+        /// 保存時の判定（<see cref="ExpressionClipIO.CanKeepSourceCurve"/>）と同じ条件を使う。
+        /// 中間キーのあるクリップは 2 フレームとして読み込むため、1 フレームに切り替えると保持できなくなる。
+        /// </summary>
+        private bool CanKeepAnySourceCurve()
+        {
+            return _model != null
+                && _model.entries != null
+                && _model.entries.Any(entry => ExpressionClipIO.CanKeepSourceCurve(_model, entry));
         }
 
         private void MarkUnsaved()
@@ -2420,6 +2567,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             var isWeightBlend = hasModel && frameMode == ExpressionFrameMode.WeightBlend;
             _weightModeContainer?.EnableInClassList("hidden", !isWeightBlend);
+            _frameModeInfoIcon?.EnableInClassList(ExpressionEditorStyles.HiddenClassName, !isWeightBlend);
             if (!isWeightBlend)
             {
                 _editingFrame = ExpressionEditFrame.Start;
@@ -2444,21 +2592,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 && (_outputMode != BlendShapeOutputMode.ReferenceClipDiff || _referenceClip != null);
             _saveButton?.SetEnabled(canSaveOutput);
             _saveAsButton?.SetEnabled(canSaveOutput);
-            _resetButton?.SetEnabled(hasModel);
             _newButton?.SetEnabled(_avatarField != null && _avatarField.value != null && _rendererField != null && _rendererField.value != null);
             _previewToggle?.SetEnabled(_pendingThumbnailCapture == null);
             _frameModeField?.SetEnabled(hasModel);
             _outputModeField?.SetEnabled(hasModel);
             _referenceClipField?.SetEnabled(hasModel && _outputMode == BlendShapeOutputMode.ReferenceClipDiff);
-            _bulkTargetMenu?.SetEnabled(hasModel && _blendShapeListView != null);
-            _sceneInfluenceFilterToggle?.SetEnabled(CanUseSceneInfluenceFilter());
-            _clearSceneInfluenceFilterButton?.SetEnabled(_sceneInfluenceResults != null);
+            _sceneInfluenceFilterButton?.SetEnabled(CanUseSceneInfluenceFilter());
             _startFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
             _endFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
             _loadStartFromRendererButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
             _previewWeightSlider?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
         }
 
+        /// <summary>
+        /// 操作ごとの警告・エラーと、操作を続けるための案内をメッセージ欄に表示する。空文字を渡すとメッセージ欄を隠す。
+        /// 成功・完了の通知には <see cref="ShowSuccess"/> を使う。セッション中ずっと当てはまる警告
+        /// （編集中のクリップの中間キーなど）は、次の操作で消えないよう出力設定の HelpBox に出す。
+        /// </summary>
         private void ShowMessage(string message, HelpBoxMessageType messageType)
         {
             if (_messageBox == null)
@@ -2471,14 +2621,73 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _messageBox.EnableInClassList("hidden", string.IsNullOrEmpty(message));
         }
 
+        /// <summary>
+        /// 成功・完了をウィンドウの通知（<see cref="EditorWindow.ShowNotification(GUIContent)"/>）で知らせる。
+        /// 通知は一覧の位置を動かさない。メッセージ欄に残っている以前のメッセージは消す。
+        /// </summary>
+        private void ShowSuccess(string message)
+        {
+            ShowMessage("", HelpBoxMessageType.Info);
+            if (string.IsNullOrEmpty(message))
+            {
+                return;
+            }
+
+            var presenter = NotificationPresenter ?? ShowNotificationText;
+            presenter(message);
+        }
+
+        private void ShowNotificationText(string message)
+        {
+            ShowNotification(new GUIContent(message));
+        }
+
+        /// <summary>
+        /// サムネイル撮影欄からのメッセージを表示する。Info は完了の通知（メニューアイコンの割り当て）なので通知にし、
+        /// 警告はメッセージ欄に表示する。
+        /// </summary>
+        private void OnThumbnailCaptureMessageRequested(string message, HelpBoxMessageType messageType)
+        {
+            if (messageType == HelpBoxMessageType.Info)
+            {
+                ShowSuccess(message);
+                return;
+            }
+
+            ShowMessage(message, messageType);
+        }
+
         private void RequestPreview()
         {
             _previewDirty = true;
             _lastPreviewRequestTime = EditorApplication.timeSinceStartup;
         }
 
+        /// <summary>
+        /// エディタースキンに合わせて、ウィンドウのルートにスキンクラス（dark-skin / light-skin）を付ける。
+        /// 開いている間にスキンが切り替わった場合は、絞り込み行などのアイコンを付け直し、行のアイコンもそのスキンのものにするため一覧を更新する。
+        /// </summary>
+        private void UpdateSkinClass()
+        {
+            var isProSkin = EditorGUIUtility.isProSkin;
+            if (_appliedProSkin == isProSkin)
+            {
+                return;
+            }
+
+            var skinChanged = _appliedProSkin.HasValue;
+            _appliedProSkin = isProSkin;
+            ExpressionEditorStyles.ApplySkinClass(rootVisualElement, isProSkin);
+            if (skinChanged)
+            {
+                RefreshIcons();
+                _blendShapeListView?.Refresh();
+            }
+        }
+
         private void OnEditorUpdate()
         {
+            UpdateSkinClass();
             FlushPartialImportViewRefreshIfReady();
             FlushOutputDecisionUiRefreshIfReady();
 
@@ -2667,7 +2876,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             if (!string.IsNullOrEmpty(resultMessage))
             {
-                ShowMessage(resultMessage, resultMessageType);
+                if (resultMessageType == HelpBoxMessageType.Info)
+                {
+                    ShowSuccess(resultMessage);
+                }
+                else
+                {
+                    ShowMessage(resultMessage, resultMessageType);
+                }
             }
 
             if (shouldUpdatePreview)
@@ -2774,7 +2990,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     capturedTexture = null;
                     if (capture.ShowMessage)
                     {
-                        ShowMessage("サムネイルプレビューを更新しました。", HelpBoxMessageType.Info);
+                        ShowSuccess("サムネイルプレビューを更新しました。");
                     }
                 }
                 else
@@ -2785,7 +3001,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                         capture.FilePath,
                         capture.Settings.backgroundMode == ThumbnailBackgroundMode.Transparent);
                     _thumbnailCaptureView.SetCapturedTexture(savedTexture, capture.FilePath);
-                    ShowMessage("サムネイルを保存しました。", HelpBoxMessageType.Info);
+                    ShowSuccess("サムネイルを保存しました。");
                 }
             }
             catch (Exception ex)

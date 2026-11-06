@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -26,11 +27,51 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public int UnavailableCount { get; }
     }
 
+    /// <summary>
+    /// 一覧ヘッダーのチェックボックスに表示する、全件の編集・出力対象の状態。
+    /// 同名の 2 個目以降は編集・出力対象にできないため、集計に含めない。
+    /// </summary>
+    internal enum BlendShapeTargetAggregateState
+    {
+        /// <summary>集計対象のすべてが編集・出力対象。</summary>
+        AllTargets,
+
+        /// <summary>集計対象のすべてが編集・出力対象外。集計対象がない場合も含む。</summary>
+        NoTargets,
+
+        /// <summary>編集・出力対象と対象外が混在している。</summary>
+        Mixed,
+    }
+
     public sealed class BlendShapeListView
     {
         private const float ChangedTolerance = 0.0001f;
         private const float NarrowLayoutWidth = 720f;
+        private const string NarrowClassName = "narrow";
+        internal const string BulkRestoreEditingStartLabel = "編集開始時点の状態に戻す";
+        internal const string ResetEditableValuesLabel = "編集可能なすべての値を初期値に戻す";
+        internal const string HeaderTargetTooltip =
+            "全件の編集・出力対象の状態です。クリックすると一括変更メニューを開きます。\n"
+            + "一括変更は、検索や表示フィルターにかかわらず、すべてのブレンドシェイプへ適用します。";
+
+        /// <summary>
+        /// システム除外理由ごとの呼び方。鍵アイコンと名前の tooltip には、この順で並べる。
+        /// </summary>
+        private static readonly SystemExclusionReasonName[] SystemExclusionReasonNames =
+        {
+            new SystemExclusionReasonName(BlendShapeSystemExclusionReason.Mmd, "MMD"),
+            new SystemExclusionReasonName(BlendShapeSystemExclusionReason.LipSync, "リップシンク"),
+            new SystemExclusionReasonName(BlendShapeSystemExclusionReason.EyeControl, "目"),
+            new SystemExclusionReasonName(BlendShapeSystemExclusionReason.Empty, "空"),
+            new SystemExclusionReasonName(BlendShapeSystemExclusionReason.Duplicate, "同名"),
+        };
+
         private readonly ExpressionEditModel _model;
+        private readonly VisualElement _header;
+        private readonly HeaderTargetMenuButton _headerTargetButton;
+        private readonly Clickable _headerTargetClickable;
+        private readonly Toggle _headerTargetToggle;
+        private readonly ExpressionEditorIconElement _headerMenuIcon;
         private readonly ListView _listView;
         private readonly Label _emptyLabel;
         private readonly List<BlendShapeEntry> _items = new List<BlendShapeEntry>();
@@ -49,12 +90,42 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public event Action<BlendShapeEntry> PreviewValueChanged;
         public event Action PreviewResetRequested;
 
+        /// <summary>
+        /// 一覧ヘッダーのメニューから一括変更を実行した後に通知する。結果の表示はウィンドウ側で行う。
+        /// </summary>
+        public event Action<BlendShapeBulkEditableTargetAction, BlendShapeBulkEditableTargetResult> BulkEditableTargetActionApplied;
+
+        /// <summary>
+        /// 表示する行を絞り込み直した後に通知する。件数が変わらない場合も通知する。
+        /// 表示数や 0 件時の表示の更新はウィンドウ側で行う。
+        /// </summary>
+        public event Action VisibleEntriesChanged;
+
         public bool IsGroupedUndoActive => _activeUndoGroup >= 0;
+
+        /// <summary>
+        /// 絞り込みにかかわらない、一覧の全件数。一括変更メニューや表示数の件数表示に使う。
+        /// </summary>
+        public int TotalEntryCount => _model != null && _model.entries != null
+            ? _model.entries.Count(entry => entry != null)
+            : 0;
+
+        /// <summary>
+        /// 検索・表示フィルター・位置フィルタで絞り込んだ後、一覧に表示している件数。
+        /// </summary>
+        public int VisibleEntryCount => _items.Count;
 
         public BlendShapeListView(ExpressionEditModel model, VisualElement container, Label emptyLabel)
         {
             _model = model;
             _emptyLabel = emptyLabel;
+
+            _header = CreateHeader(
+                out _headerTargetButton,
+                out _headerTargetClickable,
+                out _headerTargetToggle,
+                out _headerMenuIcon);
+            container.Add(_header);
 
             _listView = CreateListView();
             container.Add(_listView);
@@ -83,6 +154,25 @@ namespace MitarashiDango.FacialExpressionController.Editor
         public void SetShowOutputOnly(bool showOutputOnly)
         {
             _showOutputOnly = showOutputOnly;
+            Refresh();
+        }
+
+        /// <summary>
+        /// 検索文字・表示フィルター・位置フィルタをまとめて設定し、一覧を 1 回だけ作り直す。
+        /// <paramref name="spatialInfluenceResults"/> が null の場合は位置フィルタを外す。
+        /// </summary>
+        public void SetFilters(
+            string searchText,
+            bool showChangedOnly,
+            bool showEditableOnly,
+            bool showOutputOnly,
+            IReadOnlyDictionary<int, BlendShapeInfluenceResult> spatialInfluenceResults)
+        {
+            _searchText = searchText ?? "";
+            _showChangedOnly = showChangedOnly;
+            _showEditableOnly = showEditableOnly;
+            _showOutputOnly = showOutputOnly;
+            _spatialInfluenceResults = spatialInfluenceResults;
             Refresh();
         }
 
@@ -140,6 +230,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _listView.itemsSource = _items;
             _listView.Rebuild();
             _emptyLabel.EnableInClassList("hidden", _items.Count > 0);
+            UpdateHeaderState();
+            VisibleEntriesChanged?.Invoke();
         }
 
         private bool HasVisibleItemsChanged()
@@ -271,6 +363,195 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return new BlendShapeBulkEditableTargetResult(changes.Count, unavailableCount);
         }
 
+        /// <summary>
+        /// 一覧ヘッダーのチェックボックスに表示する、全件の編集・出力対象の状態を求める。
+        /// 検索や表示フィルターには左右されない。同名の 2 個目以降は集計に含めない。
+        /// </summary>
+        internal BlendShapeTargetAggregateState GetTargetAggregateState()
+        {
+            var targetCount = 0;
+            var excludedCount = 0;
+            if (_model != null && _model.entries != null)
+            {
+                foreach (var entry in _model.entries)
+                {
+                    if (entry == null || entry.IsDuplicateName)
+                    {
+                        continue;
+                    }
+
+                    if (entry.ShouldOutput)
+                    {
+                        targetCount++;
+                    }
+                    else
+                    {
+                        excludedCount++;
+                    }
+                }
+            }
+
+            if (targetCount > 0 && excludedCount > 0)
+            {
+                return BlendShapeTargetAggregateState.Mixed;
+            }
+
+            return targetCount > 0
+                ? BlendShapeTargetAggregateState.AllTargets
+                : BlendShapeTargetAggregateState.NoTargets;
+        }
+
+        /// <summary>
+        /// 「すべてを編集・出力対象にする」のメニュー項目名を、全件数を入れて返す。
+        /// </summary>
+        internal static string GetBulkAllEditableLabel(int totalCount)
+        {
+            return $"すべて（{totalCount} 件）を編集・出力対象にする";
+        }
+
+        /// <summary>
+        /// 「すべてを編集・出力対象外にする」のメニュー項目名を、全件数を入れて返す。
+        /// </summary>
+        internal static string GetBulkAllExcludedLabel(int totalCount)
+        {
+            return $"すべて（{totalCount} 件）を編集・出力対象外にする";
+        }
+
+        /// <summary>
+        /// 一覧ヘッダーの一括変更メニューを作る。件数は作成時点の全件数を使う。
+        /// </summary>
+        internal DropdownMenu CreateHeaderMenu()
+        {
+            var totalCount = TotalEntryCount;
+            var menu = new DropdownMenu();
+            menu.AppendAction(
+                GetBulkAllEditableLabel(totalCount),
+                _ => ApplyBulkEditableTargetActionFromHeaderMenu(BlendShapeBulkEditableTargetAction.AllEditable),
+                GetHeaderMenuActionStatus);
+            menu.AppendAction(
+                GetBulkAllExcludedLabel(totalCount),
+                _ => ApplyBulkEditableTargetActionFromHeaderMenu(BlendShapeBulkEditableTargetAction.AllExcluded),
+                GetHeaderMenuActionStatus);
+            menu.AppendAction(
+                BulkRestoreEditingStartLabel,
+                _ => ApplyBulkEditableTargetActionFromHeaderMenu(BlendShapeBulkEditableTargetAction.RestoreEditingStart),
+                GetHeaderMenuActionStatus);
+            menu.AppendSeparator();
+            menu.AppendAction(
+                ResetEditableValuesLabel,
+                _ => ResetEditableValues(),
+                GetHeaderMenuActionStatus);
+            return menu;
+        }
+
+        /// <summary>
+        /// 2 点間を移動するスライダーのつまみが、正規化した値の位置にあるときのつまみ中心の X 座標を求める。
+        /// UI Toolkit の Slider は、つまみの左端を「つまみ置き場の幅 − つまみの幅」の範囲で動かすため、
+        /// 両端ではつまみの幅の半分だけ内側が中心になる。座標はつまみの親要素の左端を 0 とする。
+        /// </summary>
+        internal static float CalculateSliderValueCenter(
+            float normalizedValue,
+            float containerWidth,
+            float draggerWidth,
+            float draggerMarginLeft,
+            float draggerMarginRight)
+        {
+            var travel = Mathf.Max(0f, containerWidth - draggerWidth - draggerMarginLeft - draggerMarginRight);
+            return draggerMarginLeft + draggerWidth * 0.5f + Mathf.Round(Mathf.Clamp01(normalizedValue) * travel);
+        }
+
+        private VisualElement CreateHeader(
+            out HeaderTargetMenuButton targetButton,
+            out Clickable targetClickable,
+            out Toggle targetToggle,
+            out ExpressionEditorIconElement menuIcon)
+        {
+            var header = new VisualElement();
+            header.AddToClassList("blendshape-list-header");
+
+            targetButton = new HeaderTargetMenuButton
+            {
+                tooltip = HeaderTargetTooltip,
+            };
+            targetButton.AddToClassList("blendshape-header-target");
+            targetClickable = new Clickable(OpenHeaderMenu);
+            targetButton.AddManipulator(targetClickable);
+            header.Add(targetButton);
+
+            // チェックボックスは状態の表示専用にし、クリックは親要素で受けてメニューを開く。
+            targetToggle = new Toggle
+            {
+                focusable = false,
+            };
+            targetToggle.AddToClassList("blendshape-target-toggle");
+            targetToggle.AddToClassList("blendshape-header-toggle");
+            SetPickingModeIgnoreRecursive(targetToggle);
+            targetToggle.RegisterValueChangedCallback(_ => UpdateHeaderState());
+            targetButton.Add(targetToggle);
+
+            menuIcon = new ExpressionEditorIconElement();
+            menuIcon.AddToClassList("blendshape-header-menu-icon");
+            menuIcon.SetPickingModeIgnore();
+            targetButton.Add(menuIcon);
+
+            var nameCaption = new Label("名前");
+            nameCaption.AddToClassList("blendshape-header-name");
+            header.Add(nameCaption);
+
+            var valueCaption = new Label("値");
+            valueCaption.AddToClassList("blendshape-header-value");
+            header.Add(valueCaption);
+
+            return header;
+        }
+
+        private void OpenHeaderMenu()
+        {
+            if (_model == null)
+            {
+                return;
+            }
+
+            _headerTargetButton.menu = CreateHeaderMenu();
+            _headerTargetButton.ShowMenu();
+        }
+
+        private DropdownMenuAction.Status GetHeaderMenuActionStatus(DropdownMenuAction action)
+        {
+            return _model != null && _model.entries != null
+                ? DropdownMenuAction.Status.Normal
+                : DropdownMenuAction.Status.Disabled;
+        }
+
+        private void ApplyBulkEditableTargetActionFromHeaderMenu(BlendShapeBulkEditableTargetAction action)
+        {
+            if (_model == null)
+            {
+                return;
+            }
+
+            var result = ApplyBulkEditableTargetAction(action);
+            BulkEditableTargetActionApplied?.Invoke(action, result);
+        }
+
+        private void UpdateHeaderState()
+        {
+            var state = GetTargetAggregateState();
+            _headerTargetToggle.SetValueWithoutNotify(state == BlendShapeTargetAggregateState.AllTargets);
+            _headerTargetToggle.showMixedValue = state == BlendShapeTargetAggregateState.Mixed;
+
+            // 混在表示の要素は showMixedValue を有効にしたときに作られるため、その都度クリックを受けないようにする。
+            SetPickingModeIgnoreRecursive(_headerTargetToggle);
+            _headerMenuIcon.SetIcon(ExpressionEditorIcons.Dropdown);
+            _headerTargetButton.SetEnabled(_model != null);
+        }
+
+        private static void SetPickingModeIgnoreRecursive(VisualElement element)
+        {
+            element.Query<VisualElement>().ForEach(child => child.pickingMode = PickingMode.Ignore);
+            element.pickingMode = PickingMode.Ignore;
+        }
+
         private ListView CreateListView()
         {
             var listView = new ListView
@@ -299,7 +580,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void UpdateResponsiveLayout(float width)
         {
-            _listView.EnableInClassList("narrow", width > 0f && width < NarrowLayoutWidth);
+            var isNarrow = width > 0f && width < NarrowLayoutWidth;
+            _listView.EnableInClassList(NarrowClassName, isNarrow);
+            _header.EnableInClassList(NarrowClassName, isNarrow);
         }
 
         private bool MatchesFilter(BlendShapeEntry entry)
@@ -466,6 +749,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return entry != null && !entry.IsSystemLocked && !entry.userExcluded;
         }
 
+        /// <summary>
+        /// 鍵アイコンと名前の tooltip に出す除外理由。<see cref="SystemExclusionReasonNames"/> の順・呼び方で組み立てる。
+        /// </summary>
         private static string GetSystemExclusionText(BlendShapeEntry entry)
         {
             if (entry == null || entry.systemExclusion == BlendShapeSystemExclusionReason.None)
@@ -473,33 +759,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return "";
             }
 
-            var reasons = new List<string>();
-            if ((entry.systemExclusion & BlendShapeSystemExclusionReason.Mmd) != 0)
-            {
-                reasons.Add("MMD");
-            }
-
-            if ((entry.systemExclusion & BlendShapeSystemExclusionReason.LipSync) != 0)
-            {
-                reasons.Add("リップシンク");
-            }
-
-            if ((entry.systemExclusion & BlendShapeSystemExclusionReason.EyeControl) != 0)
-            {
-                reasons.Add("目");
-            }
-
-            if ((entry.systemExclusion & BlendShapeSystemExclusionReason.Empty) != 0)
-            {
-                reasons.Add("空");
-            }
-
-            if ((entry.systemExclusion & BlendShapeSystemExclusionReason.Duplicate) != 0)
-            {
-                reasons.Add("同名");
-            }
-
-            return string.Join(", ", reasons);
+            return string.Join(
+                ", ",
+                SystemExclusionReasonNames
+                    .Where(reasonName => (entry.systemExclusion & reasonName.Reason) != 0)
+                    .Select(reasonName => reasonName.Name));
         }
 
         private string GetOutputStatusText(BlendShapeEntry entry, out string tooltip)
@@ -534,14 +798,37 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private sealed class BlendShapeRow : VisualElement
         {
+            private const string TargetToggleTooltip = "編集・出力対象にするかどうかを切り替える";
+            private const string DuplicateTargetToggleTooltip =
+                "同じ名前のブレンドシェイプは .anim 上で区別できないため、2 個目以降は編集・出力対象にできません。";
+            private const string ResetButtonTooltip = "このブレンドシェイプの始点・終点を初期値に戻します。";
+            private const string ResetUnavailableLockedTooltip =
+                "システム除外のため戻せません。左のチェックボックスで編集・出力対象にすると戻せます。";
+            private const string ResetUnavailableExcludedTooltip =
+                "編集・出力対象外のため戻せません。左のチェックボックスで編集・出力対象にすると戻せます。";
+            private const string ResetUnavailableDuplicateTooltip =
+                "同じ名前のブレンドシェイプが先にあり、編集・出力対象にできないため戻せません。";
+            private const string LockedTooltipHeading = "システム除外";
+            private const string UnlockedTooltipHeading = "システム除外を解除中";
+            private const string LockedTooltip =
+                "編集・出力対象外になっています。左のチェックボックスで対象にできます。";
+            private const string LockedDuplicateTooltip =
+                "同じ名前のブレンドシェイプが先にあるため、編集・出力対象にできません。";
+            private const string UnlockedTooltip =
+                "編集・出力対象にしています。左のチェックボックスでシステム除外に戻せます。";
+
             private readonly BlendShapeListView _owner;
+            private readonly Toggle _outputToggle;
+            private readonly ExpressionEditorIconElement _lockIcon;
             private readonly Label _nameLabel;
             private readonly Slider _slider;
+            private readonly VisualElement _sliderDragger;
+            private readonly VisualElement _sliderTracker;
+            private readonly VisualElement _initialValueTick;
             private readonly FloatField _valueField;
-            private readonly Button _resetButton;
-            private readonly Toggle _outputToggle;
+            private readonly Button _entryResetButton;
+            private readonly ExpressionEditorIconElement _entryResetIcon;
             private readonly Label _outputStatusLabel;
-            private readonly Label _reasonLabel;
             private BlendShapeEntry _entry;
             private bool _ignoreChange;
 
@@ -550,9 +837,25 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _owner = owner;
                 AddToClassList("blendshape-row");
 
+                _outputToggle = new Toggle
+                {
+                    tooltip = TargetToggleTooltip,
+                };
+                _outputToggle.AddToClassList("blendshape-target-toggle");
+                _outputToggle.RegisterValueChangedCallback(OnOutputChanged);
+                Add(_outputToggle);
+
+                var nameCell = new VisualElement();
+                nameCell.AddToClassList("blendshape-name-cell");
+                Add(nameCell);
+
+                _lockIcon = new ExpressionEditorIconElement();
+                _lockIcon.AddToClassList("blendshape-lock-icon");
+                nameCell.Add(_lockIcon);
+
                 _nameLabel = new Label();
                 _nameLabel.AddToClassList("blendshape-name");
-                Add(_nameLabel);
+                nameCell.Add(_nameLabel);
 
                 _slider = new Slider(0f, 100f);
                 _slider.AddToClassList("blendshape-slider");
@@ -563,33 +866,43 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _slider.RegisterCallback<PointerCaptureOutEvent>(_ => _owner.EndGroupedUndo());
                 Add(_slider);
 
+                _initialValueTick = new VisualElement
+                {
+                    pickingMode = PickingMode.Ignore,
+                };
+                _initialValueTick.AddToClassList("blendshape-initial-tick");
+                _sliderDragger = _slider.Q(className: BaseSlider<float>.draggerUssClassName);
+                _sliderTracker = _slider.Q(className: BaseSlider<float>.trackerUssClassName);
+                var dragContainer = _sliderDragger?.parent;
+                if (dragContainer != null)
+                {
+                    // つまみより下、溝より上に描くため、溝の直後へ入れる。
+                    var insertIndex = _sliderTracker != null && _sliderTracker.parent == dragContainer
+                        ? dragContainer.IndexOf(_sliderTracker) + 1
+                        : dragContainer.IndexOf(_sliderDragger);
+                    dragContainer.Insert(insertIndex, _initialValueTick);
+                    dragContainer.RegisterCallback<GeometryChangedEvent>(_ => UpdateInitialValueTick());
+                }
+
                 _valueField = new FloatField();
                 _valueField.AddToClassList("blendshape-value");
                 _valueField.RegisterValueChangedCallback(OnValueChanged);
                 Add(_valueField);
 
-                _resetButton = new Button(OnResetClicked)
+                _entryResetButton = new Button(OnResetClicked)
                 {
-                    text = "戻す",
-                    tooltip = "このブレンドシェイプの始点・終点を初期値に戻します。",
+                    tooltip = ResetButtonTooltip,
                 };
-                _resetButton.AddToClassList("blendshape-reset-button");
-                Add(_resetButton);
-
-                _outputToggle = new Toggle();
-                _outputToggle.text = "編集・出力対象";
-                _outputToggle.tooltip = "編集・出力対象にするかどうかを切り替える";
-                _outputToggle.AddToClassList("blendshape-output-toggle");
-                _outputToggle.RegisterValueChangedCallback(OnOutputChanged);
-                Add(_outputToggle);
+                _entryResetButton.AddToClassList("blendshape-reset-button");
+                _entryResetIcon = new ExpressionEditorIconElement();
+                _entryResetIcon.AddToClassList("blendshape-reset-icon");
+                _entryResetIcon.SetPickingModeIgnore();
+                _entryResetButton.Add(_entryResetIcon);
+                Add(_entryResetButton);
 
                 _outputStatusLabel = new Label();
                 _outputStatusLabel.AddToClassList("blendshape-output-status");
                 Add(_outputStatusLabel);
-
-                _reasonLabel = new Label();
-                _reasonLabel.AddToClassList("blendshape-reason");
-                Add(_reasonLabel);
             }
 
             public void Bind(BlendShapeEntry entry)
@@ -606,30 +919,31 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _valueField.SetValueWithoutNotify(displayValue);
                 _outputToggle.SetValueWithoutNotify(entry.ShouldOutput);
                 _outputToggle.tooltip = entry.IsDuplicateName
-                    ? "同じ名前のブレンドシェイプは .anim 上で区別できないため、2 個目以降は編集・出力対象にできません。"
-                    : "編集・出力対象にするかどうかを切り替える";
+                    ? DuplicateTargetToggleTooltip
+                    : TargetToggleTooltip;
                 var outputStatusText = _owner.GetOutputStatusText(entry, out var outputStatusTooltip);
                 _outputStatusLabel.text = outputStatusText;
                 _outputStatusLabel.tooltip = outputStatusTooltip;
                 var reasonText = GetSystemExclusionText(entry);
-                _reasonLabel.text = reasonText;
                 _nameLabel.tooltip = GetNameTooltip(entry.name, outputStatusText, outputStatusTooltip, reasonText);
+                UpdateLockIcon(entry, reasonText);
 
                 _slider.SetEnabled(canEditValue);
                 _valueField.SetEnabled(canEditValue);
-                _resetButton.SetEnabled(canEditValue && IsValueChanged(entry));
+                _entryResetIcon.SetIcon(ExpressionEditorIcons.Reset);
+                UpdateResetButton(entry);
                 _outputToggle.SetEnabled(!entry.IsDuplicateName);
                 _outputStatusLabel.RemoveFromClassList("hidden");
                 _outputStatusLabel.style.visibility = string.IsNullOrEmpty(outputStatusText)
                     ? Visibility.Hidden
                     : Visibility.Visible;
-                _reasonLabel.RemoveFromClassList("hidden");
                 EnableInClassList("system-excluded", isSystemLocked);
                 EnableInClassList("system-unlocked", isSystemExcluded && !isSystemLocked);
                 EnableInClassList("user-excluded", entry.userExcluded);
                 EnableInClassList("changed", IsChanged(entry));
                 EnableInClassList("output-scheduled", _owner.IsOutputScheduled(entry));
                 EnableInClassList("output-skipped", _owner._outputMode != BlendShapeOutputMode.AllTargets && !_owner.IsOutputScheduled(entry));
+                UpdateInitialValueTick();
 
                 _ignoreChange = false;
             }
@@ -656,6 +970,124 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return string.Join("\n", details);
             }
 
+            /// <summary>
+            /// システム除外の行は名前の前に鍵アイコンを出す。ロック解除済みの行は解錠アイコンにする。
+            /// tooltip の 1 行目に除外理由（<paramref name="reasonText"/>）を出す。
+            /// システム除外でない行も列幅を保つため、アイコンの場所は非表示（visibility）で残す。
+            /// </summary>
+            private void UpdateLockIcon(BlendShapeEntry entry, string reasonText)
+            {
+                if (!entry.IsSystemExcluded)
+                {
+                    _lockIcon.tooltip = "";
+                    _lockIcon.AddToClassList(ExpressionEditorStyles.InvisibleClassName);
+                    return;
+                }
+
+                var isLocked = entry.IsSystemLocked;
+                _lockIcon.SetIcon(isLocked ? ExpressionEditorIcons.Locked : ExpressionEditorIcons.Unlocked);
+                _lockIcon.tooltip = GetLockIconTooltip(entry, reasonText);
+                _lockIcon.RemoveFromClassList(ExpressionEditorStyles.InvisibleClassName);
+            }
+
+            /// <summary>
+            /// 鍵アイコンの tooltip。1 行目に状態と除外理由、2 行目にチェックボックスでできることを出す。
+            /// </summary>
+            private static string GetLockIconTooltip(BlendShapeEntry entry, string reasonText)
+            {
+                if (!entry.IsSystemLocked)
+                {
+                    return $"{UnlockedTooltipHeading}: {reasonText}\n{UnlockedTooltip}";
+                }
+
+                var detail = entry.IsDuplicateName ? LockedDuplicateTooltip : LockedTooltip;
+                return $"{LockedTooltipHeading}: {reasonText}\n{detail}";
+            }
+
+            /// <summary>
+            /// 値が初期値から変わっていない行では「戻す」ボタンを非表示にする。列幅は保つ。
+            /// 値が変わっていても編集できない行では、表示したまま無効にし、tooltip を戻せない理由にする。
+            /// </summary>
+            private void UpdateResetButton(BlendShapeEntry entry)
+            {
+                var isValueChanged = IsValueChanged(entry);
+                var canReset = CanEditValue(entry) && isValueChanged;
+                _entryResetButton.SetEnabled(canReset);
+                _entryResetButton.tooltip = canReset || !isValueChanged
+                    ? ResetButtonTooltip
+                    : GetResetUnavailableTooltip(entry);
+                _entryResetButton.EnableInClassList(ExpressionEditorStyles.InvisibleClassName, !isValueChanged);
+            }
+
+            /// <summary>
+            /// 値が変わっているのに「戻す」を使えない理由を返す。
+            /// </summary>
+            private static string GetResetUnavailableTooltip(BlendShapeEntry entry)
+            {
+                if (entry.IsDuplicateName)
+                {
+                    return ResetUnavailableDuplicateTooltip;
+                }
+
+                return entry.IsSystemLocked
+                    ? ResetUnavailableLockedTooltip
+                    : ResetUnavailableExcludedTooltip;
+            }
+
+            /// <summary>
+            /// 初期値の目盛りを、スライダーのつまみが初期値にあるときの中心位置へ置く。
+            /// レイアウトが確定していない間は何もしない（ジオメトリ変更時に再計算する）。
+            /// </summary>
+            private void UpdateInitialValueTick()
+            {
+                if (_entry == null || _sliderDragger == null || _initialValueTick.parent == null)
+                {
+                    return;
+                }
+
+                var containerLayout = _initialValueTick.parent.layout;
+                var containerWidth = containerLayout.width;
+                if (float.IsNaN(containerWidth) || containerWidth <= 0f)
+                {
+                    return;
+                }
+
+                var draggerStyle = _sliderDragger.resolvedStyle;
+                var normalizedValue = Mathf.InverseLerp(_slider.lowValue, _slider.highValue, _entry.initialValue);
+                if (_slider.inverted)
+                {
+                    normalizedValue = 1f - normalizedValue;
+                }
+
+                var center = CalculateSliderValueCenter(
+                    normalizedValue,
+                    containerWidth,
+                    GetFiniteOrZero(draggerStyle.width),
+                    GetFiniteOrZero(draggerStyle.marginLeft),
+                    GetFiniteOrZero(draggerStyle.marginRight));
+                var tickWidth = GetFiniteOrZero(_initialValueTick.resolvedStyle.width);
+                _initialValueTick.style.left = center - tickWidth * 0.5f;
+
+                // 縦位置は溝の中心に合わせる。溝が見つからない場合はつまみ置き場の中心にする。
+                var centerY = GetFiniteOrZero(containerLayout.height) * 0.5f;
+                if (_sliderTracker != null && _sliderTracker.parent == _initialValueTick.parent)
+                {
+                    var trackerLayout = _sliderTracker.layout;
+                    if (!float.IsNaN(trackerLayout.y) && !float.IsNaN(trackerLayout.height))
+                    {
+                        centerY = trackerLayout.y + trackerLayout.height * 0.5f;
+                    }
+                }
+
+                var tickHeight = GetFiniteOrZero(_initialValueTick.resolvedStyle.height);
+                _initialValueTick.style.top = centerY - tickHeight * 0.5f;
+            }
+
+            private static float GetFiniteOrZero(float value)
+            {
+                return float.IsNaN(value) || float.IsInfinity(value) ? 0f : value;
+            }
+
             public void Unbind()
             {
                 _entry = null;
@@ -679,7 +1111,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 try
                 {
                     _valueField.SetValueWithoutNotify(_owner.GetDisplayValue(entry));
-                    _resetButton.SetEnabled(CanEditValue(entry) && IsValueChanged(entry));
+                    UpdateResetButton(entry);
                     EnableInClassList("changed", IsChanged(entry));
                 }
                 finally
@@ -708,7 +1140,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     var displayValue = _owner.GetDisplayValue(entry);
                     _slider.SetValueWithoutNotify(displayValue);
                     _valueField.SetValueWithoutNotify(displayValue);
-                    _resetButton.SetEnabled(CanEditValue(entry) && IsValueChanged(entry));
+                    UpdateResetButton(entry);
                     EnableInClassList("changed", IsChanged(entry));
                 }
                 finally
@@ -772,6 +1204,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             entry.systemExclusionUnlocked = nextState.SystemExclusionUnlocked;
             entry.userExcluded = nextState.UserExcluded;
             EditorUtility.SetDirty(_model);
+            UpdateHeaderState();
             PreviewResetRequested?.Invoke();
             Changed?.Invoke();
         }
@@ -858,6 +1291,26 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _entry.systemExclusionUnlocked = _state.SystemExclusionUnlocked;
                 _entry.userExcluded = _state.UserExcluded;
             }
+        }
+
+        private readonly struct SystemExclusionReasonName
+        {
+            public SystemExclusionReasonName(BlendShapeSystemExclusionReason reason, string name)
+            {
+                Reason = reason;
+                Name = name;
+            }
+
+            public BlendShapeSystemExclusionReason Reason { get; }
+            public string Name { get; }
+        }
+
+        /// <summary>
+        /// 一覧ヘッダー左端の、チェックボックスと ▾ をまとめたクリック領域。クリックで一括変更メニューを開く。
+        /// </summary>
+        private sealed class HeaderTargetMenuButton : VisualElement, IToolbarMenuElement
+        {
+            public DropdownMenu menu { get; set; } = new DropdownMenu();
         }
     }
 }
