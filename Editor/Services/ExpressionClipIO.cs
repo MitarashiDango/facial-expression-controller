@@ -537,12 +537,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private static bool ShouldRestoreSourceCurve(ExpressionEditModel model, BlendShapeEntry entry)
         {
-            return model.hasSourceClip
-                && entry.hasSourceCurve
-                && entry.sourceCurve != null
-                && model.frameMode == entry.sourceFrameMode
+            return CanKeepSourceCurve(model, entry)
                 && Approximately(entry.value, entry.sourceValue)
                 && Approximately(entry.endValue, entry.sourceEndValue);
+        }
+
+        /// <summary>
+        /// 値を編集していなければ、保存時に読み込み元のカーブをそのまま書き戻せる項目かを返す。
+        /// 読み込み元のカーブがあり、フレームモードが読み込み時と同じ場合に true。値の変更は見ない。
+        /// </summary>
+        internal static bool CanKeepSourceCurve(ExpressionEditModel model, BlendShapeEntry entry)
+        {
+            return model != null
+                && entry != null
+                && model.hasSourceClip
+                && entry.hasSourceCurve
+                && entry.sourceCurve != null
+                && model.frameMode == entry.sourceFrameMode;
         }
 
         private static void RestoreLockedSystemSourceCurve(AnimationClip animationClip, string rendererPath, BlendShapeEntry entry)
