@@ -39,25 +39,96 @@
     min-width: 0;
 }
 
+/* ドキュメントバー（1 行目）。クリップ欄を残りの幅に広げ、右に新規・保存 ▾・プレビューのボタンを並べる。 */
+.document-bar {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 4px;
+    min-width: 0;
+}
+
+.document-clip-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-right: 4px;
+}
+
+.document-bar-button {
+    flex-shrink: 0;
+    min-width: 48px;
+    margin: 1px 4px 1px 0;
+}
+
+/* 「保存」と ▾ を 1 つのボタンのようにつなげる。 */
+.split-button {
+    flex-direction: row;
+    flex-shrink: 0;
+    margin: 1px 4px 1px 0;
+}
+
+.split-button__main {
+    min-width: 48px;
+    margin: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.split-button__menu {
+    min-width: 18px;
+    margin: 0;
+    padding: 0 2px;
+    border-left-width: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+/* シーンへのプレビューの切り替え（目のアイコン）。オンのときは絞り込みのチップと同じ青で示す。 */
+.preview-toggle-button {
+    flex-shrink: 0;
+    min-width: 24px;
+    margin: 1px 0;
+    padding: 0 4px;
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-toggle-button.selected {
+    border-color: rgb(77, 160, 255);
+    background-color: rgba(77, 160, 255, 0.30);
+}
+
+.light-skin .preview-toggle-button.selected {
+    border-color: rgb(0, 92, 200);
+    background-color: rgba(0, 92, 200, 0.18);
+}
+
+/* 対象（アバター・Renderer）の折りたたみ。見出しの Hierarchy パスが長いときは省略する。 */
+.target-foldout {
+    margin-bottom: 4px;
+    min-width: 0;
+}
+
+.target-foldout .unity-foldout__input {
+    min-width: 0;
+}
+
+.target-foldout .unity-foldout__text {
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .target-container {
-    margin-bottom: 6px;
     min-width: 0;
 }
 
 .target-field {
     min-width: 0;
-}
-
-.toolbar-container {
-    flex-direction: row;
-    flex-wrap: wrap;
-    margin-bottom: 6px;
-    min-width: 0;
-}
-
-.toolbar-container > Button {
-    margin-right: 4px;
-    min-width: 64px;
 }
 
 /* 補足説明を tooltip で示す ⓘ アイコン。 */
@@ -66,63 +137,139 @@
     margin-right: 4px;
 }
 
+/*
+ * フレームモードの行。「1 フレーム｜2 フレーム」のセグメント切替、2 フレームのときだけ出すフレームバー、ⓘ を 1 行に並べる。
+ * 幅が足りないときはフレームバーを次の行へ折り返す。
+ */
 .frame-mode-container {
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
-    margin-bottom: 6px;
-    min-width: 0;
-}
-
-.frame-mode-field {
-    flex-grow: 1;
-    flex-shrink: 1;
-    min-width: 0;
-}
-
-.weight-mode-container {
-    margin-bottom: 6px;
-    min-width: 0;
-}
-
-.frame-tab-container {
-    flex-direction: row;
     margin-bottom: 4px;
     min-width: 0;
 }
 
-.frame-tab-button {
-    min-width: 72px;
-    margin-right: 4px;
-}
-
-.frame-tab-button.selected {
-    background-color: rgba(64, 128, 192, 0.32);
-}
-
-.weight-preview-container {
-    flex-direction: column;
-    align-items: stretch;
-    min-width: 0;
-}
-
-.weight-preview-slider {
-    flex-grow: 0;
-    flex-shrink: 1;
-    min-width: 0;
-    margin-right: 0;
-}
-
-.load-start-button {
-    align-self: flex-start;
+/* セグメント切替。ボタンをつなげて置き、選んでいる側はチップと同じ青で示す。 */
+.segmented-control {
+    flex-direction: row;
     flex-shrink: 0;
-    min-width: 0;
-    max-width: 100%;
-    margin-top: 4px;
-    white-space: normal;
+    margin: 1px 8px 1px 0;
+}
+
+.segmented-control__button {
+    min-width: 64px;
+    margin: 0;
+    padding: 0 8px;
+}
+
+.segmented-control__button--first {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.segmented-control__button--last {
+    border-left-width: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+.segmented-control__button.selected {
+    border-color: rgb(77, 160, 255);
+    background-color: rgba(77, 160, 255, 0.30);
+    color: rgb(235, 244, 255);
+}
+
+.light-skin .segmented-control__button.selected {
+    border-color: rgb(0, 92, 200);
+    background-color: rgba(0, 92, 200, 0.18);
+    color: rgb(0, 45, 110);
+}
+
+/* 2 フレームのフレームバー。始点の◆と ▾・ウェイトプレビューのつまみ・終点の◆を 1 本に並べ、行の残りの幅に広げる。 */
+.frame-bar {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 260px;
+    min-width: 220px;
+}
+
+/*
+ * 始点・終点の◆。編集中の側は枠と背景を青にし、◆を塗りつぶす。
+ * 編集していない側の◆は中抜きにし、一覧の行で「もう一方のフレームの値」を示す印と同じ色にする。
+ */
+.frame-marker {
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    margin: 1px 0;
+    padding: 0 6px 0 5px;
+}
+
+.frame-marker.split-button__main {
+    margin: 0;
+}
+
+.frame-marker__diamond {
+    width: 8px;
+    height: 8px;
+    margin: 0 5px 0 2px;
+    border-width: 1.5px;
+    border-color: rgb(255, 176, 64);
+    background-color: rgba(0, 0, 0, 0);
+    rotate: 45deg;
+}
+
+.light-skin .frame-marker__diamond {
+    border-color: rgb(196, 110, 0);
+}
+
+.frame-marker__label {
+    margin: 0;
+    padding: 0;
+    white-space: nowrap;
+    -unity-text-align: middle-left;
+}
+
+.frame-marker.selected {
+    border-color: rgb(77, 160, 255);
+    background-color: rgba(77, 160, 255, 0.30);
+}
+
+.frame-marker.selected .frame-marker__diamond {
+    border-color: rgb(77, 160, 255);
+    background-color: rgb(77, 160, 255);
+}
+
+.frame-marker.selected .frame-marker__label {
+    color: rgb(235, 244, 255);
+}
+
+.light-skin .frame-marker.selected {
+    border-color: rgb(0, 92, 200);
+    background-color: rgba(0, 92, 200, 0.18);
+}
+
+.light-skin .frame-marker.selected .frame-marker__diamond {
+    border-color: rgb(0, 92, 200);
+    background-color: rgb(0, 92, 200);
+}
+
+.light-skin .frame-marker.selected .frame-marker__label {
+    color: rgb(0, 45, 110);
+}
+
+/* つまみの左右の間隔は、どちらも 6px にする（左は ▾ の右余白 4px と合わせて 6px）。 */
+.frame-weight-slider {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 60px;
+    margin: 0 6px 0 2px;
 }
 
 .output-settings-container {
-    margin-bottom: 6px;
+    padding: 2px 2px 4px 2px;
     min-width: 0;
 }
 
@@ -171,16 +318,16 @@
 }
 
 .thumbnail-container {
-    margin-bottom: 6px;
+    padding: 2px 2px 4px 2px;
     min-width: 0;
 }
 
 .partial-import-container {
-    margin-bottom: 6px;
+    padding: 2px 2px 4px 2px;
     min-width: 0;
 }
 
-.partial-import-foldout {
+.partial-import-view {
     min-width: 0;
 }
 
@@ -303,7 +450,7 @@
     background-color: rgba(64, 64, 64, 0.25);
 }
 
-.thumbnail-foldout {
+.thumbnail-view {
     min-width: 0;
 }
 
@@ -398,8 +545,8 @@
 .filter-container {
     flex-direction: row;
     align-items: flex-start;
-    margin-top: 6px;
-    margin-bottom: 6px;
+    margin-top: 0;
+    margin-bottom: 4px;
     min-width: 0;
 }
 
@@ -537,22 +684,104 @@
     color: rgb(90, 90, 90);
 }
 
+/*
+ * 一覧（上側）と下部タブの中身（下側）の分割ビュー。下部タブがすべて閉じているときは下側を畳む。
+ * 分割ビューは、上下それぞれの min-height を境界のドラッグとウィンドウの縮小の下限に使う。
+ */
+.body-split-view {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+    min-width: 0;
+}
+
+/* 下部タブを開いても、一覧ヘッダーと 2 行分は残す。 */
+.list-pane {
+    flex-grow: 1;
+    min-height: 96px;
+    min-width: 0;
+}
+
 .list-panel {
     flex-grow: 1;
-    min-height: 120px;
+    min-height: 0;
     min-width: 0;
 }
 
 .list-container {
     flex-grow: 1;
-    min-height: 120px;
+    min-height: 0;
     min-width: 0;
 }
 
 .blendshape-list {
     flex-grow: 1;
-    min-height: 120px;
+    min-height: 68px;
     min-width: 0;
+}
+
+/* 開いた下部タブの中身。中身が高さに収まらないときはタブごとにスクロールする。 */
+.bottom-tab-panel {
+    min-height: 80px;
+    min-width: 0;
+    padding-top: 4px;
+}
+
+.bottom-tab-page {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-height: 0;
+    min-width: 0;
+}
+
+/* 下部タブの見出し。常にウィンドウの一番下に置き、開いたタブは上側の中身とつながるよう上端を青で示す。 */
+.bottom-tab-bar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    min-width: 0;
+    margin-top: 2px;
+    border-top-width: 1px;
+    border-top-color: rgba(128, 128, 128, 0.45);
+}
+
+.bottom-tab {
+    flex-direction: row;
+    flex-shrink: 0;
+    align-items: center;
+    height: 22px;
+    margin: 0 2px 0 0;
+    padding: 0 8px;
+    border-width: 0;
+    border-top-width: 2px;
+    border-top-color: rgba(0, 0, 0, 0);
+    border-radius: 0 0 3px 3px;
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.bottom-tab:hover {
+    background-color: rgba(128, 128, 128, 0.24);
+}
+
+.bottom-tab.selected {
+    border-top-color: rgb(77, 160, 255);
+    background-color: rgba(77, 160, 255, 0.22);
+}
+
+.light-skin .bottom-tab.selected {
+    border-top-color: rgb(0, 92, 200);
+    background-color: rgba(0, 92, 200, 0.14);
+}
+
+.bottom-tab__label {
+    margin: 0;
+    padding: 0;
+    white-space: nowrap;
+    -unity-text-align: middle-left;
+}
+
+.bottom-tab__warning-icon {
+    margin-right: 3px;
 }
 
 /* 一覧ヘッダー。左余白は ListView の枠線 1px、行の左余白 4px、変更行の色帯 3px の合計に合わせる。 */
@@ -705,6 +934,26 @@
 
 .light-skin .blendshape-initial-tick {
     background-color: rgba(32, 32, 32, 0.85);
+}
+
+/*
+ * 2 フレームのとき、もう一方のフレームの値を示す中抜きのひし形。初期値の目盛り（縦線）とつまみとは形と色で見分ける。
+ * 色はフレームバーで編集していない側の◆と同じにする。位置は BlendShapeListView がつまみの中心に合わせて設定する。
+ */
+.blendshape-other-frame-marker {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 7px;
+    height: 7px;
+    border-width: 1.5px;
+    border-color: rgb(255, 176, 64);
+    background-color: rgba(0, 0, 0, 0);
+    rotate: 45deg;
+}
+
+.light-skin .blendshape-other-frame-marker {
+    border-color: rgb(196, 110, 0);
 }
 
 .blendshape-value {

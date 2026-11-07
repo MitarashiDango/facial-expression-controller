@@ -13,7 +13,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private const string NoSourceClipMessage = "取り込み元 AnimationClip を指定してください。";
         private const float ValueTolerance = 0.0001f;
 
-        private readonly Foldout _root;
+        private readonly VisualElement _root;
         private readonly ObjectField _sourceClipField;
         private readonly ToolbarSearchField _searchField;
         private readonly Button _selectAllButton;
@@ -41,12 +41,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             container.Clear();
 
-            _root = new Foldout
-            {
-                text = "部分取り込み",
-                value = false,
-            };
-            _root.AddToClassList("partial-import-foldout");
+            // 見出しと開閉はウィンドウ下部のタブが受け持つため、ここではタブの中身だけを作る。
+            _root = new VisualElement();
+            _root.AddToClassList("partial-import-view");
             container.Add(_root);
 
             var sourceRow = new VisualElement();
