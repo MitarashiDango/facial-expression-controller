@@ -55,12 +55,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             container.Clear();
 
-            _root = new Foldout
-            {
-                text = "サムネイル撮影",
-                value = false,
-            };
-            _root.AddToClassList("thumbnail-foldout");
+            // 見出しと開閉はウィンドウ下部のタブが受け持つため、ここではタブの中身だけを作る。
+            _root = new VisualElement();
+            _root.AddToClassList("thumbnail-view");
             container.Add(_root);
 
             var bodyContainer = new VisualElement();

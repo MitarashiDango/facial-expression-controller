@@ -20,14 +20,37 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private const float SceneInfluenceFilterRadiusMeters = BlendShapeInfluenceProbeOptions.DefaultWorldRadius;
         private const float SceneInfluenceFilterMinimumDeltaMeters = BlendShapeInfluenceProbeOptions.DefaultMinimumDelta;
         private const int SceneInfluenceFilterMaxResults = BlendShapeInfluenceProbeOptions.DefaultMaxResults;
-        private const string SingleFrameModeLabel = "1 フレーム";
-        private const string WeightBlendModeLabel = "ウェイト連動（2 フレーム）";
         private const string OutputModeAllTargetsLabel = "全ての編集・出力対象";
         private const string OutputModeSessionBaselineDiffLabel = "セッション開始時の値との差分";
         private const string OutputModeReferenceClipDiffLabel = "参照クリップとの差分";
+        internal const float BottomPaneInitialHeight = 160f;
+
+        /// <summary>下側（タブの中身）の高さが、取れる最大の高さにあるとみなす誤差（px）。</summary>
+        private const float BottomPaneMaxHeightTolerance = 1f;
+        private const float FieldLabelWidth = 180f;
+        private const float FieldLabelMinWidth = 160f;
+
+        /// <summary>Unity 標準の Foldout の中身の字下げ（.unity-foldout__content の margin-left）。</summary>
+        private const float FoldoutContentIndent = 15f;
         internal const string ClipFieldLabel = "編集中のクリップ";
         internal const string UnsavedLabelSuffix = "*";
         internal const string UnsavedChangesTooltip = "未保存の変更があります";
+        internal const string NewButtonLabel = "新規";
+        internal const string SaveButtonLabel = "保存";
+        internal const string SaveMenuTooltip = "その他の保存方法";
+        internal const string SaveAsMenuItemLabel = "名前を付けて保存…";
+        internal const string PreviewEnabledTooltip = "シーンへのプレビュー: オン（クリックでオフ）";
+        internal const string PreviewDisabledTooltip = "シーンへのプレビュー: オフ（クリックでオン）";
+        internal const string TargetFoldoutEmptyHeader = "対象アバター";
+        internal const string TargetFoldoutTooltip = "編集対象のアバターと Skinned Mesh Renderer";
+        internal const string ThumbnailTabLabel = "サムネイル撮影";
+        internal const string PartialImportTabLabel = "部分取り込み";
+        internal const string OutputSettingsTabLabel = "出力設定";
+        internal const string OutputSettingsTabDiffText = "差分";
+        internal const string OutputSettingsTabWarningText = "警告あり";
+        internal const string ThumbnailTabTooltip = "表情のサムネイルを撮影し、メニューアイコンに設定します。クリックで開閉します。";
+        internal const string PartialImportTabTooltip = "別のクリップから、選んだブレンドシェイプの値を取り込みます。クリックで開閉します。";
+        internal const string OutputSettingsTabTooltip = "保存するブレンドシェイプの範囲と、出力予定の件数です。クリックで開閉します。";
         internal const string ChangedOnlyFilterLabel = "変更あり";
         internal const string EditableOnlyFilterLabel = "対象のみ";
         internal const string OutputOnlyFilterLabel = "出力予定";
@@ -42,6 +65,19 @@ namespace MitarashiDango.FacialExpressionController.Editor
         internal const string FilteredEmptyListText = "絞り込みの条件に一致するブレンドシェイプがありません。";
         internal const string ClearFiltersLabel = "絞り込みを解除";
         internal const string ClearFiltersTooltip = "検索文字・表示フィルター・クリック位置による絞り込みをすべて解除します。";
+        internal const string SingleFrameModeLabel = "1 フレーム";
+        internal const string WeightBlendModeLabel = "2 フレーム";
+        internal const string SingleFrameModeTooltip = "1 フレーム: ジェスチャーのウェイトにかかわらず、常に同じ表情にします。";
+        internal const string WeightBlendModeTooltip =
+            "2 フレーム: ジェスチャーのウェイト（Fist のトリガー量など）に合わせて、始点の表情から終点の表情へ変化させます。";
+        internal const string StartFrameMarkerLabel = "始点";
+        internal const string EndFrameMarkerLabel = "終点";
+        internal const string StartFrameMarkerTooltip = "始点（ウェイト 0 の表情）を編集します。クリックするとウェイトプレビューも 0 に移ります。";
+        internal const string EndFrameMarkerTooltip = "終点（ウェイト 1 の表情）を編集します。クリックするとウェイトプレビューも 1 に移ります。";
+        internal const string StartFrameMenuTooltip = "始点のその他の操作";
+        internal const string LoadStartFromRendererMenuItemLabel = "始点へ Skinned Mesh Renderer 現在値を読み込み";
+        internal const string PreviewWeightSliderTooltip =
+            "ウェイトプレビュー: つまみを動かすと、始点と終点の間の表情をシーンで確認できます。編集するフレームは変わりません。";
         internal const string WeightModeNoteText =
             "Fist はトリガー量にリアルタイム連動します。他ジェスチャーや表情固定中・メニュー選択中は、既存メニューの「表情固定時の表情ウェイト」で調整されます。";
         internal const string DiffOutputNoteText = "差分なしのブレンドシェイプカーブは保存時に省略されます。";
@@ -49,7 +85,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             "3 つ以上のキーを持つクリップです。未編集の項目は元カーブを保持し、編集した項目は始端と終端の直線カーブとして保存されます。";
         internal const string IntermediateKeysSingleFrameWarningText =
             "3 つ以上のキーを持つクリップです。1 フレームで保存すると、未編集の項目も元カーブを保持せず 1 キーのカーブとして保存されます。";
-        private static readonly List<string> FrameModeChoices = new List<string> { SingleFrameModeLabel, WeightBlendModeLabel };
         private static readonly List<string> OutputModeChoices = new List<string>
         {
             OutputModeAllTargetsLabel,
@@ -60,7 +95,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private ObjectField _avatarField;
         private ObjectField _rendererField;
         private ObjectField _clipField;
-        private PopupField<string> _frameModeField;
+        private Button _singleFrameModeButton;
+        private Button _weightBlendModeButton;
         private PopupField<string> _outputModeField;
         private ObjectField _referenceClipField;
         private ToolbarSearchField _searchField;
@@ -77,17 +113,31 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private Button _clearFiltersButton;
         private ExpressionEditorIconElement _frameModeInfoIcon;
         private ExpressionEditorIconElement _outputModeInfoIcon;
-        private Toggle _previewToggle;
+        private Button _previewButton;
+        private ExpressionEditorIconElement _previewIcon;
         private Button _newButton;
         private Button _saveButton;
-        private Button _saveAsButton;
-        private Button _startFrameButton;
-        private Button _endFrameButton;
-        private Button _loadStartFromRendererButton;
+        private DropdownMenuButton _saveMenuButton;
+        private ExpressionEditorIconElement _saveMenuIcon;
+        private Foldout _targetFoldout;
+        private TwoPaneSplitView _bottomSplitView;
+        private VisualElement _bottomTabPanel;
+        private ScrollView _thumbnailTabPage;
+        private ScrollView _partialImportTabPage;
+        private ScrollView _outputSettingsTabPage;
+        private Button _thumbnailTabButton;
+        private Button _partialImportTabButton;
+        private Button _outputSettingsTabButton;
+        private Label _outputSettingsTabLabel;
+        private ExpressionEditorIconElement _outputSettingsTabWarningIcon;
+        private VisualElement _frameBar;
+        private Button _startFrameMarker;
+        private DropdownMenuButton _startFrameMenuButton;
+        private ExpressionEditorIconElement _startFrameMenuIcon;
+        private Button _endFrameMarker;
         private Slider _previewWeightSlider;
         private HelpBox _messageBox;
         private HelpBox _outputSettingsMessageBox;
-        private VisualElement _weightModeContainer;
         private VisualElement _listContainer;
         private Label _emptyLabel;
         private Label _outputSummaryLabel;
@@ -119,6 +169,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private BlendShapeInfluenceHit _sceneInfluenceHit;
         private bool _guiBuildRetryScheduled;
         private bool? _appliedProSkin;
+        [SerializeField] private BottomTab _openBottomTab = BottomTab.None;
+
+        /// <summary>下部タブの中身の高さ。境界のドラッグで変えた高さを、高さが変わるたびに覚えておき、次に開くときに使う。</summary>
+        [SerializeField] private float _bottomPaneHeight = BottomPaneInitialHeight;
+
+        /// <summary>分割ビューの初期化後、下側（タブの中身）を表示しているか。初期化前は false。</summary>
+        private bool _bottomPaneShown;
+        private bool? _targetFoldoutTargetsComplete;
         private double _lastPreviewRequestTime;
         private int _partialImportPreviewRequestVersion;
         private double _partialImportPreviewCaptureReadyTime;
@@ -137,6 +195,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
         /// テストで通知の内容を確認するためのもので、通常の処理からは変更しない。
         /// </summary>
         internal Action<string> NotificationPresenter { get; set; }
+
+        /// <summary>
+        /// 名前を付けて保存の保存先を選ぶ処理。引数は既定のファイル名と既定のフォルダーで、キャンセルされた場合は空文字を返す。
+        /// 既定では保存ダイアログを表示する。テストでダイアログを表示せずに保存先を差し替えるためのもので、通常の処理からは変更しない。
+        /// </summary>
+        internal Func<string, string, string> SaveAsPathSelector { get; set; } = ShowSaveAsFilePanel;
+
+        /// <summary>
+        /// 一覧の下のタブ。開けるのは 1 つだけで、<see cref="None"/> はすべて閉じている状態。
+        /// </summary>
+        internal enum BottomTab
+        {
+            None,
+            ThumbnailCapture,
+            PartialImport,
+            OutputSettings,
+        }
 
         [MenuItem("Tools/Facial Expression Controller/表情アニメーションエディター")]
         public static void Open()
@@ -194,6 +269,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             Undo.undoRedoPerformed += OnUndoRedoPerformed;
             EditorApplication.update += OnEditorUpdate;
+            EditorApplication.hierarchyChanged += OnHierarchyChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
             if (BuildGui())
@@ -204,10 +280,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private void OnDisable()
         {
-            _previewEnabled = _previewToggle != null ? _previewToggle.value : _previewEnabled;
             _hasSerializedUnsavedChanges = hasUnsavedChanges;
             Undo.undoRedoPerformed -= OnUndoRedoPerformed;
             EditorApplication.update -= OnEditorUpdate;
+            EditorApplication.hierarchyChanged -= OnHierarchyChanged;
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             AssemblyReloadEvents.beforeAssemblyReload -= OnBeforeAssemblyReload;
             EditorApplication.delayCall -= RetryBuildGui;
@@ -251,6 +327,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             var root = mainUxmlAsset.CloneTree();
+
+            // CloneTree が返す TemplateContainer は伸びず、中身の高さになる。分割ビューは一覧側を flex-basis 0 にして
+            // 親の高さから一覧の高さを決めるため、ウィンドウの高さまで広げておかないと分割ビューの高さが 0 になり一覧が見えなくなる。
+            // TemplateContainer は UXML に書かれていない要素のため、CloneTree の隣のここで指定する。
+            root.style.flexGrow = 1f;
+
             var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(MainUssPath);
             if (styleSheet != null)
             {
@@ -261,15 +343,14 @@ namespace MitarashiDango.FacialExpressionController.Editor
             rootVisualElement.Add(root);
             UpdateSkinClass();
 
+            var documentBar = root.Q<VisualElement>("document-bar");
+            _targetFoldout = root.Q<Foldout>("target-foldout");
+            _targetFoldoutTargetsComplete = null;
             var targetContainer = root.Q<VisualElement>("target-container");
-            var toolbarContainer = root.Q<VisualElement>("toolbar-container");
             var frameModeContainer = root.Q<VisualElement>("frame-mode-container");
-            var frameTabContainer = root.Q<VisualElement>("frame-tab-container");
-            var weightPreviewContainer = root.Q<VisualElement>("weight-preview-container");
             var outputSettingsContainer = root.Q<VisualElement>("output-settings-container");
             var thumbnailContainer = root.Q<VisualElement>("thumbnail-container");
             var partialImportContainer = root.Q<VisualElement>("partial-import-container");
-            _weightModeContainer = root.Q<VisualElement>("weight-mode-container");
             _listContainer = root.Q<VisualElement>("blendshape-list-container");
             _emptyLabel = root.Q<Label>("empty-label");
             _messageBox = root.Q<HelpBox>("message-box");
@@ -279,7 +360,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 objectType = typeof(VRCAvatarDescriptor),
                 allowSceneObjects = true,
             };
-            ConfigureTargetField(_avatarField);
+            ConfigureTargetFieldInFoldout(_avatarField);
             _avatarField.RegisterValueChangedCallback(evt => SetAvatar(evt.newValue as VRCAvatarDescriptor));
             targetContainer.Add(_avatarField);
 
@@ -288,7 +369,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 objectType = typeof(SkinnedMeshRenderer),
                 allowSceneObjects = true,
             };
-            ConfigureTargetField(_rendererField);
+            ConfigureTargetFieldInFoldout(_rendererField);
             _rendererField.RegisterValueChangedCallback(evt => SetRenderer(evt.newValue as SkinnedMeshRenderer));
             targetContainer.Add(_rendererField);
 
@@ -298,70 +379,17 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 allowSceneObjects = false,
             };
             ConfigureTargetField(_clipField);
+            _clipField.AddToClassList("document-clip-field");
             _clipField.RegisterValueChangedCallback(evt => OnClipFieldChanged(evt.newValue as AnimationClip));
-            targetContainer.Add(_clipField);
+            documentBar.Add(_clipField);
             UpdateUnsavedIndicator();
 
-            _newButton = new Button(CreateNewSession) { text = "新規" };
-            _saveButton = new Button(Save) { text = "保存" };
-            _saveAsButton = new Button(SaveAs) { text = "別名保存" };
-            toolbarContainer.Add(_newButton);
-            toolbarContainer.Add(_saveButton);
-            toolbarContainer.Add(_saveAsButton);
+            BuildDocumentBarButtons(documentBar);
+            UpdateTargetFoldout();
 
-            _previewToggle = new Toggle("プレビュー")
-            {
-                value = _previewEnabled,
-            };
-            _previewToggle.RegisterValueChangedCallback(evt =>
-            {
-                _previewEnabled = evt.newValue;
-                if (_previewService != null)
-                {
-                    _previewService.PreviewEnabled = evt.newValue;
-                }
-
-                RequestPreview();
-            });
-            toolbarContainer.Add(_previewToggle);
-
-            _frameModeField = new PopupField<string>("フレームモード", FrameModeChoices, 0);
-            _frameModeField.AddToClassList("frame-mode-field");
-            _frameModeField.labelElement.style.minWidth = 160f;
-            _frameModeField.labelElement.style.width = 180f;
-            _frameModeField.labelElement.style.flexShrink = 0f;
-            _frameModeField.RegisterValueChangedCallback(evt => SetFrameMode(GetFrameModeFromLabel(evt.newValue)));
-            frameModeContainer.Add(_frameModeField);
-
-            _frameModeInfoIcon = CreateInfoIcon(WeightModeNoteText);
-            _frameModeInfoIcon.AddToClassList("frame-mode-info-icon");
-            frameModeContainer.Add(_frameModeInfoIcon);
-
-            _startFrameButton = new Button(() => SetEditingFrame(ExpressionEditFrame.Start, true)) { text = "始点" };
-            _startFrameButton.AddToClassList("frame-tab-button");
-            frameTabContainer.Add(_startFrameButton);
-
-            _endFrameButton = new Button(() => SetEditingFrame(ExpressionEditFrame.End, true)) { text = "終点" };
-            _endFrameButton.AddToClassList("frame-tab-button");
-            frameTabContainer.Add(_endFrameButton);
-
-            _previewWeightSlider = new Slider("ウェイトプレビュー", 0f, 1f)
-            {
-                value = _previewWeight,
-            };
-            _previewWeightSlider.AddToClassList("weight-preview-slider");
-            _previewWeightSlider.RegisterValueChangedCallback(evt =>
-            {
-                _previewWeight = Mathf.Clamp01(evt.newValue);
-                RequestPreview();
-            });
-            weightPreviewContainer.Add(_previewWeightSlider);
-
-            _loadStartFromRendererButton = new Button(LoadCurrentRendererValuesIntoStart) { text = "始点へ Skinned Mesh Renderer 現在値を読み込み" };
-            _loadStartFromRendererButton.AddToClassList("load-start-button");
-            weightPreviewContainer.Add(_loadStartFromRendererButton);
-
+            BuildFrameModeControls(frameModeContainer);
             BuildOutputSettingsControls(outputSettingsContainer);
+            BuildBottomTabs(root);
 
             BuildFilterControls(root.Q<VisualElement>("filter-container"));
             BuildEmptyStateControls(root.Q<VisualElement>("empty-state"));
@@ -391,6 +419,147 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// フレームモードの行を作る。「1 フレーム｜2 フレーム」のセグメント切替、2 フレームのときだけ出すフレームバー、
+        /// Fist の説明の ⓘ を 1 行に並べる（幅が足りないときはフレームバーを次の行へ折り返す）。
+        /// フレームバーは、始点の◆（横の ▾ で始点の操作のメニューを開く）・ウェイトプレビューのつまみ・終点の◆を 1 本にまとめる。
+        /// </summary>
+        private void BuildFrameModeControls(VisualElement frameModeContainer)
+        {
+            var frameModeSegment = frameModeContainer.Q<VisualElement>("frame-mode-segment");
+            _frameBar = frameModeContainer.Q<VisualElement>("frame-bar");
+
+            _singleFrameModeButton = CreateFrameModeButton(
+                SingleFrameModeLabel,
+                SingleFrameModeTooltip,
+                ExpressionFrameMode.SingleFrame);
+            _singleFrameModeButton.AddToClassList("segmented-control__button--first");
+            frameModeSegment.Add(_singleFrameModeButton);
+
+            _weightBlendModeButton = CreateFrameModeButton(
+                WeightBlendModeLabel,
+                WeightBlendModeTooltip,
+                ExpressionFrameMode.WeightBlend);
+            _weightBlendModeButton.AddToClassList("segmented-control__button--last");
+            frameModeSegment.Add(_weightBlendModeButton);
+
+            // 始点の◆と、始点の操作のメニューを開く ▾ を 1 つのボタンのようにつなげて置く。
+            var startMarkerGroup = new VisualElement();
+            startMarkerGroup.AddToClassList("split-button");
+            startMarkerGroup.AddToClassList("frame-marker-group");
+            _frameBar.Add(startMarkerGroup);
+
+            _startFrameMarker = CreateFrameMarker(StartFrameMarkerLabel, StartFrameMarkerTooltip, ExpressionEditFrame.Start);
+            _startFrameMarker.AddToClassList("split-button__main");
+            startMarkerGroup.Add(_startFrameMarker);
+
+            _startFrameMenuButton = new DropdownMenuButton(OpenStartFrameMenu)
+            {
+                tooltip = StartFrameMenuTooltip,
+            };
+            _startFrameMenuButton.AddToClassList("split-button__menu");
+            _startFrameMenuIcon = new ExpressionEditorIconElement();
+            _startFrameMenuIcon.SetPickingModeIgnore();
+            _startFrameMenuButton.Add(_startFrameMenuIcon);
+            startMarkerGroup.Add(_startFrameMenuButton);
+
+            _previewWeightSlider = new Slider(0f, 1f)
+            {
+                value = _previewWeight,
+                tooltip = PreviewWeightSliderTooltip,
+            };
+            _previewWeightSlider.AddToClassList("frame-weight-slider");
+            _previewWeightSlider.RegisterValueChangedCallback(OnPreviewWeightSliderChanged);
+            _frameBar.Add(_previewWeightSlider);
+
+            _endFrameMarker = CreateFrameMarker(EndFrameMarkerLabel, EndFrameMarkerTooltip, ExpressionEditFrame.End);
+            _frameBar.Add(_endFrameMarker);
+
+            _frameModeInfoIcon = CreateInfoIcon(WeightModeNoteText);
+            _frameModeInfoIcon.AddToClassList("frame-mode-info-icon");
+            frameModeContainer.Add(_frameModeInfoIcon);
+        }
+
+        /// <summary>
+        /// フレームモードのセグメント切替のボタンを作る。選んでいる側は <see cref="ExpressionEditorStyles.SelectedClassName"/> で示す。
+        /// </summary>
+        private Button CreateFrameModeButton(string text, string tooltip, ExpressionFrameMode frameMode)
+        {
+            var button = new Button(() => SetFrameMode(frameMode))
+            {
+                text = text,
+                tooltip = tooltip,
+            };
+            button.AddToClassList("segmented-control__button");
+            return button;
+        }
+
+        /// <summary>
+        /// フレームバーの始点・終点の◆を作る。◆は USS で描き、横に「始点」「終点」の文字を置く。
+        /// クリックすると編集するフレームを切り替え、ウェイトプレビューをそのフレームのウェイト（0／1）へ移す。
+        /// </summary>
+        private Button CreateFrameMarker(string text, string tooltip, ExpressionEditFrame editingFrame)
+        {
+            var marker = new Button(() => SetEditingFrame(editingFrame, true))
+            {
+                tooltip = tooltip,
+            };
+            marker.AddToClassList("frame-marker");
+
+            var diamond = new VisualElement
+            {
+                pickingMode = PickingMode.Ignore,
+            };
+            diamond.AddToClassList("frame-marker__diamond");
+            marker.Add(diamond);
+
+            var label = new Label(text)
+            {
+                pickingMode = PickingMode.Ignore,
+            };
+            label.AddToClassList("frame-marker__label");
+            marker.Add(label);
+            return marker;
+        }
+
+        /// <summary>
+        /// ウェイトプレビューのつまみを動かしたときの処理。プレビューのウェイトだけを変え、編集するフレームは変えない。
+        /// </summary>
+        private void OnPreviewWeightSliderChanged(ChangeEvent<float> evt)
+        {
+            _previewWeight = Mathf.Clamp01(evt.newValue);
+            RequestPreview();
+        }
+
+        /// <summary>
+        /// 始点の◆の横の ▾ から開く、始点の操作のメニューを作る。2 フレームのときだけ使える。
+        /// </summary>
+        internal DropdownMenu CreateStartFrameMenu()
+        {
+            var menu = new DropdownMenu();
+            menu.AppendAction(
+                LoadStartFromRendererMenuItemLabel,
+                _ => LoadCurrentRendererValuesIntoStart(),
+                _ => IsWeightBlendMode() ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
+            return menu;
+        }
+
+        private void OpenStartFrameMenu()
+        {
+            if (_startFrameMenuButton == null)
+            {
+                return;
+            }
+
+            _startFrameMenuButton.menu = CreateStartFrameMenu();
+            _startFrameMenuButton.ShowMenu();
+        }
+
+        private bool IsWeightBlendMode()
+        {
+            return _model != null && _model.frameMode == ExpressionFrameMode.WeightBlend;
         }
 
         private void BuildOutputSettingsControls(VisualElement outputSettingsContainer)
@@ -450,6 +619,458 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _outputSettingsMessageBox.AddToClassList("output-settings-message");
             _outputSettingsMessageBox.AddToClassList("hidden");
             outputSettingsContainer.Add(_outputSettingsMessageBox);
+        }
+
+        /// <summary>
+        /// ドキュメントバー（1 行目）のクリップ欄の右に、「新規」「保存」と保存方法のメニューを開く ▾、
+        /// シーンへのプレビューを切り替える目のアイコンのボタンを並べる。
+        /// </summary>
+        private void BuildDocumentBarButtons(VisualElement documentBar)
+        {
+            _newButton = new Button(CreateNewSession) { text = NewButtonLabel };
+            _newButton.AddToClassList("document-bar-button");
+            documentBar.Add(_newButton);
+
+            // 「保存」と ▾ を 1 つのボタンのようにつなげて置く。▾ のメニューから名前を付けて保存する。
+            var saveButtonGroup = new VisualElement();
+            saveButtonGroup.AddToClassList("split-button");
+            documentBar.Add(saveButtonGroup);
+
+            _saveButton = new Button(Save) { text = SaveButtonLabel };
+            _saveButton.AddToClassList("split-button__main");
+            saveButtonGroup.Add(_saveButton);
+
+            _saveMenuButton = new DropdownMenuButton(OpenSaveMenu)
+            {
+                tooltip = SaveMenuTooltip,
+            };
+            _saveMenuButton.AddToClassList("split-button__menu");
+            _saveMenuIcon = new ExpressionEditorIconElement();
+            _saveMenuIcon.SetPickingModeIgnore();
+            _saveMenuButton.Add(_saveMenuIcon);
+            saveButtonGroup.Add(_saveMenuButton);
+
+            _previewButton = new Button(TogglePreviewEnabled);
+            _previewButton.AddToClassList("preview-toggle-button");
+            _previewIcon = new ExpressionEditorIconElement();
+            _previewIcon.SetPickingModeIgnore();
+            _previewButton.Add(_previewIcon);
+            documentBar.Add(_previewButton);
+            UpdatePreviewButton();
+        }
+
+        /// <summary>
+        /// 「保存」の横の ▾ から開く保存方法のメニューを作る。
+        /// </summary>
+        internal DropdownMenu CreateSaveMenu()
+        {
+            var menu = new DropdownMenu();
+            menu.AppendAction(
+                SaveAsMenuItemLabel,
+                _ => SaveAs(),
+                _ => CanSaveOutput() ? DropdownMenuAction.Status.Normal : DropdownMenuAction.Status.Disabled);
+            return menu;
+        }
+
+        private void OpenSaveMenu()
+        {
+            if (_saveMenuButton == null)
+            {
+                return;
+            }
+
+            _saveMenuButton.menu = CreateSaveMenu();
+            _saveMenuButton.ShowMenu();
+        }
+
+        private void TogglePreviewEnabled()
+        {
+            SetPreviewEnabled(!_previewEnabled);
+        }
+
+        /// <summary>
+        /// シーンへのプレビューのオン／オフを切り替える。
+        /// </summary>
+        private void SetPreviewEnabled(bool enabled)
+        {
+            _previewEnabled = enabled;
+            if (_previewService != null)
+            {
+                _previewService.PreviewEnabled = enabled;
+            }
+
+            UpdatePreviewButton();
+            RequestPreview();
+        }
+
+        /// <summary>
+        /// プレビューのボタンを、オンのときは開いた目のアイコンと選択中の色、オフのときは閉じた目のアイコンにする。
+        /// tooltip にも今の状態とクリックしたときの操作を出す。
+        /// </summary>
+        private void UpdatePreviewButton()
+        {
+            if (_previewButton != null)
+            {
+                _previewButton.EnableInClassList(ExpressionEditorStyles.SelectedClassName, _previewEnabled);
+                _previewButton.tooltip = _previewEnabled ? PreviewEnabledTooltip : PreviewDisabledTooltip;
+            }
+
+            _previewIcon?.SetIcon(_previewEnabled ? ExpressionEditorIcons.PreviewVisible : ExpressionEditorIcons.PreviewHidden);
+        }
+
+        /// <summary>
+        /// サムネイル撮影・部分取り込み・出力設定を、一覧の下のタブにまとめる。
+        /// 一覧と開いたタブの中身は <see cref="TwoPaneSplitView"/> で高さを分け合い、境界をドラッグして高さを変えられる。
+        /// タブがすべて閉じているときは下側を畳み、一覧を広げる。タブの見出しは常に一番下に置く。
+        /// </summary>
+        private void BuildBottomTabs(VisualElement root)
+        {
+            var listPane = root.Q<VisualElement>("list-pane");
+            _bottomTabPanel = root.Q<VisualElement>("bottom-tab-panel");
+            _thumbnailTabPage = root.Q<ScrollView>("thumbnail-tab-page");
+            _partialImportTabPage = root.Q<ScrollView>("partial-import-tab-page");
+            _outputSettingsTabPage = root.Q<ScrollView>("output-settings-tab-page");
+
+            // 下側の高さは fixedPaneInitialDimension で指定する。viewDataKey を付けると、分割ビューは
+            // 保存した高さを優先して fixedPaneInitialDimension を使わなくなるため付けない（高さは _bottomPaneHeight に覚える）。
+            _bottomSplitView = new TwoPaneSplitView(1, BottomPaneInitialHeight, TwoPaneSplitViewOrientation.Vertical);
+            _bottomSplitView.AddToClassList("body-split-view");
+            _bottomPaneShown = false;
+
+            // 分割ビューは最初のレイアウトでの初期化時に子が 2 つあることを前提にするため、先に上下を入れてから置く。
+            var parent = listPane.parent;
+            var index = parent.IndexOf(listPane);
+            _bottomSplitView.Add(listPane);
+            _bottomSplitView.Add(_bottomTabPanel);
+            parent.Insert(index, _bottomSplitView);
+
+            // TwoPaneSplitView は最初のレイアウトで上下の要素を初期化するまで、CollapseChild / UnCollapse を呼んでも何もせずに戻る。
+            // そのため開閉は初期化の後（最初のレイアウト後）に反映する。この登録は分割ビュー自身の初期化処理より後に呼ばれる。
+            _bottomSplitView.RegisterCallback<GeometryChangedEvent>(OnBottomSplitViewFirstLayout);
+
+            // 境界のドラッグで変えた高さは、タブを開いている間に高さが変わるたびに覚える（閉じるときには記録しない）。
+            _bottomTabPanel.RegisterCallback<GeometryChangedEvent>(OnBottomTabPanelGeometryChanged);
+
+            var tabBar = root.Q<VisualElement>("bottom-tab-bar");
+            _thumbnailTabButton = CreateBottomTabButton(ThumbnailTabLabel, ThumbnailTabTooltip, BottomTab.ThumbnailCapture, out _);
+            tabBar.Add(_thumbnailTabButton);
+            _partialImportTabButton = CreateBottomTabButton(PartialImportTabLabel, PartialImportTabTooltip, BottomTab.PartialImport, out _);
+            tabBar.Add(_partialImportTabButton);
+            _outputSettingsTabButton = CreateBottomTabButton(OutputSettingsTabLabel, OutputSettingsTabTooltip, BottomTab.OutputSettings, out _outputSettingsTabLabel);
+            _outputSettingsTabWarningIcon = new ExpressionEditorIconElement();
+            _outputSettingsTabWarningIcon.AddToClassList("bottom-tab__warning-icon");
+            _outputSettingsTabWarningIcon.AddToClassList(ExpressionEditorStyles.HiddenClassName);
+            _outputSettingsTabWarningIcon.SetPickingModeIgnore();
+            _outputSettingsTabButton.Insert(0, _outputSettingsTabWarningIcon);
+            tabBar.Add(_outputSettingsTabButton);
+
+            UpdateBottomTabs();
+        }
+
+        private Button CreateBottomTabButton(string text, string tooltip, BottomTab tab, out Label label)
+        {
+            var button = new Button(() => ToggleBottomTab(tab))
+            {
+                tooltip = tooltip,
+            };
+            button.AddToClassList("bottom-tab");
+            label = new Label(text)
+            {
+                pickingMode = PickingMode.Ignore,
+            };
+            label.AddToClassList("bottom-tab__label");
+            button.Add(label);
+            return button;
+        }
+
+        /// <summary>
+        /// 分割ビューの初期化（最初のレイアウト）の後に、開いているタブの状態を反映する。
+        /// 初期化直後の分割ビューは下側を初期値の高さで表示しているため、タブが閉じていれば畳み、開いていれば高さを合わせる。
+        /// スクリプトのコンパイル後に開いていたタブを戻す場合もここで反映する。
+        /// </summary>
+        private void OnBottomSplitViewFirstLayout(GeometryChangedEvent evt)
+        {
+            if (_bottomSplitView == null || _bottomSplitView.fixedPane == null)
+            {
+                return;
+            }
+
+            _bottomSplitView.UnregisterCallback<GeometryChangedEvent>(OnBottomSplitViewFirstLayout);
+            _bottomPaneShown = true;
+            if (_openBottomTab == BottomTab.None)
+            {
+                _bottomSplitView.CollapseChild(1);
+                _bottomPaneShown = false;
+                return;
+            }
+
+            FitBottomPaneHeight();
+        }
+
+        /// <summary>
+        /// 下部タブをクリックしたときの処理。閉じているタブは開き（開いていた別のタブは閉じる）、開いているタブは閉じる。
+        /// </summary>
+        private void ToggleBottomTab(BottomTab tab)
+        {
+            SetOpenBottomTab(_openBottomTab == tab ? BottomTab.None : tab);
+        }
+
+        /// <summary>
+        /// 開く下部タブを設定する。<see cref="BottomTab.None"/> を渡すとすべて閉じる。
+        /// 一覧は作り直さないため、編集状態・絞り込み・スクロール位置はそのまま残る。
+        /// </summary>
+        private void SetOpenBottomTab(BottomTab tab)
+        {
+            _openBottomTab = tab;
+            UpdateBottomTabs();
+        }
+
+        private void UpdateBottomTabs()
+        {
+            UpdateBottomTab(_thumbnailTabButton, _thumbnailTabPage, BottomTab.ThumbnailCapture);
+            UpdateBottomTab(_partialImportTabButton, _partialImportTabPage, BottomTab.PartialImport);
+            UpdateBottomTab(_outputSettingsTabButton, _outputSettingsTabPage, BottomTab.OutputSettings);
+            ApplyBottomPaneCollapse();
+        }
+
+        private void UpdateBottomTab(Button tabButton, VisualElement page, BottomTab tab)
+        {
+            var isOpen = _openBottomTab == tab;
+            tabButton?.EnableInClassList(ExpressionEditorStyles.SelectedClassName, isOpen);
+            page?.EnableInClassList(ExpressionEditorStyles.HiddenClassName, !isOpen);
+        }
+
+        /// <summary>
+        /// タブがすべて閉じたときは分割ビューの下側（タブの中身）を畳み、閉じた状態からタブを開いたときは戻して高さを合わせる。
+        /// 開いたまま別のタブに切り替えたときは、境界をドラッグした高さをそのまま使う。
+        /// 分割ビューの初期化前は何もしない（初期化後に <see cref="OnBottomSplitViewFirstLayout"/> で反映する）。
+        /// </summary>
+        private void ApplyBottomPaneCollapse()
+        {
+            if (_bottomSplitView == null || _bottomSplitView.fixedPane == null)
+            {
+                return;
+            }
+
+            if (_openBottomTab == BottomTab.None)
+            {
+                if (_bottomPaneShown)
+                {
+                    _bottomSplitView.CollapseChild(1);
+                    _bottomPaneShown = false;
+                }
+
+                return;
+            }
+
+            if (!_bottomPaneShown)
+            {
+                _bottomSplitView.UnCollapse();
+                _bottomPaneShown = true;
+                FitBottomPaneHeight();
+            }
+        }
+
+        /// <summary>
+        /// 表示中の下側（タブの中身）の高さが変わったときに、次に開くときのための高さを覚える（<see cref="ChooseBottomPaneHeightOnResize"/>）。
+        /// 高さの変化はすべてここで覚えるため、タブを閉じるときとウィンドウを閉じるとき（OnDisable）には記録しない。
+        /// 自動で縮んだ高さのまま閉じることがあり（警告の表示で一覧の上が伸びて縮み、その後に警告が消えた場合など）、閉じるときの高さで上書きしないため。
+        /// </summary>
+        private void OnBottomTabPanelGeometryChanged(GeometryChangedEvent evt)
+        {
+            if (!_bottomPaneShown || _bottomSplitView == null || _bottomSplitView.fixedPane == null)
+            {
+                return;
+            }
+
+            // 覚えている高さに関係なく、今の分割ビューの高さで下側が取れる最大の高さ。
+            var maxHeight = CalculateBottomPaneHeightForCurrentLayout(float.MaxValue);
+            _bottomPaneHeight = ChooseBottomPaneHeightOnResize(
+                evt.oldRect.height,
+                evt.newRect.height,
+                _bottomPaneHeight,
+                maxHeight);
+        }
+
+        /// <summary>
+        /// 下側（タブの中身）の高さが <paramref name="oldHeight"/> から <paramref name="newHeight"/> に変わったときに、覚える高さを決める。
+        /// 高さが変わっていないとき（位置だけが変わったとき）と、変わる前の高さが 0 以下のとき（最初のレイアウト・畳んだ状態から戻したとき）は、
+        /// 覚えている高さ <paramref name="rememberedHeight"/> をそのまま返す。それ以外は <see cref="ChooseBottomPaneHeightToRemember"/> で決める。
+        /// </summary>
+        internal static float ChooseBottomPaneHeightOnResize(
+            float oldHeight,
+            float newHeight,
+            float rememberedHeight,
+            float maxHeight)
+        {
+            if (!(oldHeight > 0f) || Mathf.Approximately(oldHeight, newHeight))
+            {
+                return rememberedHeight;
+            }
+
+            return ChooseBottomPaneHeightToRemember(newHeight, rememberedHeight, maxHeight);
+        }
+
+        /// <summary>
+        /// 下側（タブの中身）の高さとして覚える値を決める。基本は今の高さ <paramref name="currentHeight"/> を覚える。
+        /// ただし今の高さが、今の分割ビューの高さで取れる最大の高さ <paramref name="maxHeight"/>（誤差 1px まで）にあり、
+        /// 覚えている高さ <paramref name="rememberedHeight"/> より低いときは、覚えている高さを残す。
+        /// ウィンドウを縮めたときや一覧の上が伸びたときに分割ビューが自動で縮めた高さと、タブを開いたときに最大の高さへ収めた高さは、ユーザーが選んだ高さではないため。
+        /// 今の高さが分からない（NaN・無限大・0 以下）ときは覚えている高さを返し、最大の高さが分からないときは今の高さを返す。
+        /// </summary>
+        internal static float ChooseBottomPaneHeightToRemember(float currentHeight, float rememberedHeight, float maxHeight)
+        {
+            if (!IsPositiveFinite(currentHeight))
+            {
+                return rememberedHeight;
+            }
+
+            var isAtMaxHeight = !float.IsNaN(maxHeight)
+                && !float.IsInfinity(maxHeight)
+                && Mathf.Abs(currentHeight - maxHeight) <= BottomPaneMaxHeightTolerance;
+            if (isAtMaxHeight && IsPositiveFinite(rememberedHeight) && currentHeight < rememberedHeight)
+            {
+                return rememberedHeight;
+            }
+
+            return currentHeight;
+        }
+
+        private static bool IsPositiveFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value) && value > 0f;
+        }
+
+        /// <summary>
+        /// 下側（タブの中身）の高さを、覚えている高さと分割ビューの今の高さから決め直す。
+        /// 分割ビューは自身の大きさが変わったときにしか下側を縮めないため、タブを開いたときにここで一覧の最小高さを残す高さに収める。
+        /// 高さの指定は fixedPaneInitialDimension で行い、分割ビュー自身の初期化処理で境界の位置も合わせさせる。
+        /// </summary>
+        private void FitBottomPaneHeight()
+        {
+            var height = CalculateBottomPaneHeightForCurrentLayout(_bottomPaneHeight);
+            if (float.IsNaN(height))
+            {
+                return;
+            }
+
+            _bottomSplitView.fixedPaneInitialDimension = height;
+        }
+
+        /// <summary>
+        /// 分割ビューの今の高さと、一覧・下側の最小高さと余白から、<see cref="CalculateBottomPaneHeight"/> で下側の高さを求める。
+        /// 分割ビューの初期化前とレイアウト前は NaN を返す。
+        /// </summary>
+        private float CalculateBottomPaneHeightForCurrentLayout(float preferredHeight)
+        {
+            var bottomPane = _bottomSplitView != null ? _bottomSplitView.fixedPane : null;
+            var listPane = _bottomSplitView != null ? _bottomSplitView.flexedPane : null;
+            if (bottomPane == null || listPane == null)
+            {
+                return float.NaN;
+            }
+
+            var listPaneStyle = listPane.resolvedStyle;
+            var bottomPaneStyle = bottomPane.resolvedStyle;
+            return CalculateBottomPaneHeight(
+                preferredHeight,
+                _bottomSplitView.resolvedStyle.height,
+                listPaneStyle.minHeight.value + listPaneStyle.marginTop + listPaneStyle.marginBottom,
+                bottomPaneStyle.minHeight.value,
+                bottomPaneStyle.marginTop + bottomPaneStyle.marginBottom);
+        }
+
+        /// <summary>
+        /// 下側（タブの中身）の高さを求める。<paramref name="preferredHeight"/>（覚えている高さ。0 以下なら初期値）を、
+        /// 分割ビューの高さから一覧の最小高さ（上下の余白を含む）と下側の上下の余白を引いた高さ以下に丸める。
+        /// ただし下側の最小高さは下回らない（ウィンドウが小さすぎるときは分割ビュー自身と同じく下側の最小高さを優先する）。
+        /// 境界のドラッグ用の要素は分割ビューの上に重ねて置かれ、高さを取らないため引かない。
+        /// 分割ビューの高さが分からない（レイアウト前）場合は NaN を返す。
+        /// </summary>
+        internal static float CalculateBottomPaneHeight(
+            float preferredHeight,
+            float splitViewHeight,
+            float listPaneMinHeight,
+            float bottomPaneMinHeight,
+            float bottomPaneMargins)
+        {
+            if (float.IsNaN(splitViewHeight) || float.IsInfinity(splitViewHeight) || splitViewHeight <= 0f)
+            {
+                return float.NaN;
+            }
+
+            var height = float.IsNaN(preferredHeight) || float.IsInfinity(preferredHeight) || preferredHeight <= 0f
+                ? BottomPaneInitialHeight
+                : preferredHeight;
+            var maxHeight = splitViewHeight - GetFiniteOrZero(listPaneMinHeight) - GetFiniteOrZero(bottomPaneMargins);
+            return Mathf.Max(GetFiniteOrZero(bottomPaneMinHeight), Mathf.Min(height, maxHeight));
+        }
+
+        private static float GetFiniteOrZero(float value)
+        {
+            return float.IsNaN(value) || float.IsInfinity(value) ? 0f : value;
+        }
+
+        /// <summary>
+        /// 対象（アバター・Renderer）の折りたたみの見出しを「アバター名/Renderer の Hierarchy パス」にする。
+        /// 両方が設定されたときに閉じ、どちらかが未設定になったとき（Renderer の削除を含む）に開く。
+        /// 設定の有無が変わらない間は、ユーザーが開閉した状態をそのまま保つ。
+        /// </summary>
+        private void UpdateTargetFoldout()
+        {
+            if (_targetFoldout == null)
+            {
+                return;
+            }
+
+            // 削除されたアバター・Renderer は欄に残るが、Unity の null 判定で未設定として扱う。
+            var descriptor = _avatarField != null ? _avatarField.value as VRCAvatarDescriptor : null;
+            var avatarRootObject = descriptor != null ? descriptor.gameObject : null;
+            var renderer = _rendererField != null ? _rendererField.value as SkinnedMeshRenderer : null;
+            var header = GetTargetFoldoutHeader(avatarRootObject, renderer);
+            _targetFoldout.text = header;
+            var isComplete = avatarRootObject != null && renderer != null;
+            var toggle = _targetFoldout.Q<Toggle>(className: Foldout.toggleUssClassName);
+            if (toggle != null)
+            {
+                toggle.tooltip = isComplete ? $"{TargetFoldoutTooltip}\n{header}" : TargetFoldoutTooltip;
+            }
+
+            if (_targetFoldoutTargetsComplete != isComplete)
+            {
+                _targetFoldoutTargetsComplete = isComplete;
+                _targetFoldout.SetValueWithoutNotify(!isComplete);
+            }
+        }
+
+        /// <summary>
+        /// 対象の折りたたみの見出しを返す。アバターと Renderer があれば「アバター名/アバターから Renderer までのパス」、
+        /// アバターだけならアバター名、どちらも無ければ <see cref="TargetFoldoutEmptyHeader"/>。
+        /// </summary>
+        internal static string GetTargetFoldoutHeader(GameObject avatarRootObject, SkinnedMeshRenderer renderer)
+        {
+            if (avatarRootObject == null)
+            {
+                return renderer != null ? renderer.name : TargetFoldoutEmptyHeader;
+            }
+
+            if (renderer == null)
+            {
+                return avatarRootObject.name;
+            }
+
+            var rendererPath = renderer.transform.IsChildOf(avatarRootObject.transform)
+                ? MiscUtil.GetPathInHierarchy(renderer.gameObject, avatarRootObject)
+                : renderer.name;
+            return string.IsNullOrEmpty(rendererPath)
+                ? avatarRootObject.name
+                : $"{avatarRootObject.name}/{rendererPath}";
+        }
+
+        private void OnHierarchyChanged()
+        {
+            // アバター・Renderer の名前の変更や削除を見出しと開閉に反映する。
+            UpdateTargetFoldout();
         }
 
         /// <summary>
@@ -571,6 +1192,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _sceneInfluenceFilterClearIcon?.SetIcon(ExpressionEditorIcons.Clear);
             _frameModeInfoIcon?.SetIcon(ExpressionEditorIcons.Info);
             _outputModeInfoIcon?.SetIcon(ExpressionEditorIcons.Info);
+            _saveMenuIcon?.SetIcon(ExpressionEditorIcons.SaveMenu);
+            _startFrameMenuIcon?.SetIcon(ExpressionEditorIcons.StartFrameMenu);
+            _outputSettingsTabWarningIcon?.SetIcon(ExpressionEditorIcons.Warning);
+            UpdatePreviewButton();
         }
 
         private void ScheduleBuildGuiRetry()
@@ -600,9 +1225,26 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         private static void ConfigureTargetField(ObjectField field)
         {
+            ConfigureTargetField(field, FieldLabelWidth, FieldLabelMinWidth);
+        }
+
+        /// <summary>
+        /// 対象の折りたたみの中に置く欄を設定する。折りたたみの中身は字下げされるため、その分ラベルを狭くして、
+        /// 入力欄の開始位置をドキュメントバーのクリップ欄と揃える。
+        /// </summary>
+        private static void ConfigureTargetFieldInFoldout(ObjectField field)
+        {
+            ConfigureTargetField(
+                field,
+                FieldLabelWidth - FoldoutContentIndent,
+                FieldLabelMinWidth - FoldoutContentIndent);
+        }
+
+        private static void ConfigureTargetField(ObjectField field, float labelWidth, float labelMinWidth)
+        {
             field.AddToClassList("target-field");
-            field.labelElement.style.minWidth = 160f;
-            field.labelElement.style.width = 180f;
+            field.labelElement.style.minWidth = labelMinWidth;
+            field.labelElement.style.width = labelWidth;
             field.labelElement.style.flexShrink = 0f;
         }
 
@@ -632,7 +1274,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _avatarField?.SetValueWithoutNotify(avatarDescriptor);
             _rendererField?.SetValueWithoutNotify(_model.targetRenderer);
             _clipField?.SetValueWithoutNotify(_currentClip);
-            _previewToggle?.SetValueWithoutNotify(_previewEnabled);
+            UpdatePreviewButton();
             _outputModeField?.SetValueWithoutNotify(GetOutputModeLabel(_outputMode));
             _referenceClipField?.SetValueWithoutNotify(_referenceClip);
             if (_previewService != null)
@@ -646,6 +1288,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             UpdateFrameModeControls();
             RefreshOutputDecisionUi();
             UpdateButtonStates();
+            UpdateTargetFoldout();
             RequestPreview();
 
             // 未保存の編集はクリップ欄のラベルとタブ名の * で示しているため、復元したことは通知しない。
@@ -842,7 +1485,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             // （UpdateOutputSettingsMessage）。ここでは読み込めたことだけを通知する。
             if (_loadedSourceFrameMode == ExpressionFrameMode.WeightBlend)
             {
-                ShowSuccess("2 フレームのクリップをウェイト連動モードで読み込みました。");
+                ShowSuccess("2 フレームのクリップとして読み込みました。");
             }
             else
             {
@@ -905,6 +1548,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
             RefreshOutputDecisionUi();
 
             UpdateButtonStates();
+            UpdateTargetFoldout();
             RequestPreview();
             if (_model != null)
             {
@@ -2071,7 +2715,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return false;
             }
 
-            var filePath = EditorUtility.SaveFilePanelInProject("名前を付けて保存", defaultName, "anim", "アニメーションクリップの保存先を選択してください", defaultDirectory);
+            var filePath = (SaveAsPathSelector ?? ShowSaveAsFilePanel)(defaultName, defaultDirectory);
             if (string.IsNullOrEmpty(filePath))
             {
                 return false;
@@ -2104,6 +2748,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
             SetUnsavedChanges(false);
             ShowSuccess("保存しました。");
             return true;
+        }
+
+        private static string ShowSaveAsFilePanel(string defaultName, string defaultDirectory)
+        {
+            return EditorUtility.SaveFilePanelInProject("名前を付けて保存", defaultName, "anim", "アニメーションクリップの保存先を選択してください", defaultDirectory);
         }
 
         private static void DestroyTemporaryClip(AnimationClip clip)
@@ -2268,7 +2917,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
             var hasModel = _model != null;
             _outputModeField?.SetEnabled(hasModel);
-            _referenceClipField?.SetEnabled(hasModel && _outputMode == BlendShapeOutputMode.ReferenceClipDiff);
+            UpdateReferenceClipField();
 
             if (_outputSummaryLabel != null)
             {
@@ -2351,10 +3000,22 @@ namespace MitarashiDango.FacialExpressionController.Editor
         }
 
         /// <summary>
+        /// 参照クリップ欄は、出力範囲が「参照クリップとの差分」のときだけ表示する。
+        /// </summary>
+        private void UpdateReferenceClipField()
+        {
+            _referenceClipField?.SetEnabled(_model != null);
+            _referenceClipField?.EnableInClassList(
+                ExpressionEditorStyles.HiddenClassName,
+                _outputMode != BlendShapeOutputMode.ReferenceClipDiff);
+        }
+
+        /// <summary>
         /// 出力設定の警告（設定不備・参照クリップの中間キー・編集中のクリップの中間キー）を HelpBox に表示する。
         /// 編集中のクリップの中間キーの警告は、そのクリップを編集している間は常に表示する。
         /// 文言は、今のフレームモードで元カーブを保持できるかによって出し分ける。
         /// 差分出力の補足説明は HelpBox ではなく、出力範囲の横の ⓘ アイコンの tooltip で示す。
+        /// 出力範囲と警告の有無は、閉じていても分かるよう出力設定タブの名前にも出す。
         /// </summary>
         private void UpdateOutputSettingsMessage(
             IReadOnlyList<BlendShapeOutputDecision> decisions,
@@ -2364,19 +3025,19 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 ExpressionEditorStyles.HiddenClassName,
                 _outputMode == BlendShapeOutputMode.AllTargets);
 
-            if (_outputSettingsMessageBox == null)
-            {
-                return;
-            }
-
+            var warnings = new List<string>();
             if (_model == null)
             {
-                _outputSettingsMessageBox.text = "";
-                _outputSettingsMessageBox.EnableInClassList("hidden", true);
+                UpdateOutputSettingsTab(warnings);
+                if (_outputSettingsMessageBox != null)
+                {
+                    _outputSettingsMessageBox.text = "";
+                    _outputSettingsMessageBox.EnableInClassList("hidden", true);
+                }
+
                 return;
             }
 
-            var warnings = new List<string>();
             if (!string.IsNullOrEmpty(validationMessage))
             {
                 warnings.Add(validationMessage);
@@ -2394,10 +3055,60 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     : IntermediateKeysSingleFrameWarningText);
             }
 
+            UpdateOutputSettingsTab(warnings);
+            if (_outputSettingsMessageBox == null)
+            {
+                return;
+            }
+
             var message = string.Join("\n", warnings);
             _outputSettingsMessageBox.text = message;
             _outputSettingsMessageBox.messageType = HelpBoxMessageType.Warning;
             _outputSettingsMessageBox.EnableInClassList("hidden", string.IsNullOrEmpty(message));
+        }
+
+        /// <summary>
+        /// 出力設定タブの名前に、出力範囲が既定（全ての編集・出力対象）以外であることと、出力設定欄に警告があることを出す。
+        /// 警告があるときは警告アイコンも付け、tooltip に警告の文言を加える。
+        /// </summary>
+        private void UpdateOutputSettingsTab(IReadOnlyList<string> warnings)
+        {
+            var hasWarning = warnings != null && warnings.Count > 0;
+            if (_outputSettingsTabLabel != null)
+            {
+                _outputSettingsTabLabel.text = GetOutputSettingsTabLabel(
+                    _outputMode != BlendShapeOutputMode.AllTargets,
+                    hasWarning);
+            }
+
+            _outputSettingsTabWarningIcon?.EnableInClassList(ExpressionEditorStyles.HiddenClassName, !hasWarning);
+            if (_outputSettingsTabButton != null)
+            {
+                _outputSettingsTabButton.tooltip = hasWarning
+                    ? $"{OutputSettingsTabTooltip}\n\n{string.Join("\n", warnings)}"
+                    : OutputSettingsTabTooltip;
+            }
+        }
+
+        /// <summary>
+        /// 出力設定タブの名前を返す（例: 「出力設定: 差分」「出力設定: 警告あり」「出力設定: 差分・警告あり」）。
+        /// </summary>
+        internal static string GetOutputSettingsTabLabel(bool isDiffOutput, bool hasWarning)
+        {
+            var states = new List<string>();
+            if (isDiffOutput)
+            {
+                states.Add(OutputSettingsTabDiffText);
+            }
+
+            if (hasWarning)
+            {
+                states.Add(OutputSettingsTabWarningText);
+            }
+
+            return states.Count > 0
+                ? $"{OutputSettingsTabLabel}: {string.Join("・", states)}"
+                : OutputSettingsTabLabel;
         }
 
         /// <summary>
@@ -2519,16 +3230,6 @@ namespace MitarashiDango.FacialExpressionController.Editor
             _previewWeightSlider?.SetValueWithoutNotify(_previewWeight);
         }
 
-        private static string GetFrameModeLabel(ExpressionFrameMode frameMode)
-        {
-            return frameMode == ExpressionFrameMode.WeightBlend ? WeightBlendModeLabel : SingleFrameModeLabel;
-        }
-
-        private static ExpressionFrameMode GetFrameModeFromLabel(string label)
-        {
-            return label == WeightBlendModeLabel ? ExpressionFrameMode.WeightBlend : ExpressionFrameMode.SingleFrame;
-        }
-
         private static string GetOutputModeLabel(BlendShapeOutputMode outputMode)
         {
             switch (outputMode)
@@ -2557,16 +3258,23 @@ namespace MitarashiDango.FacialExpressionController.Editor
             return BlendShapeOutputMode.AllTargets;
         }
 
+        /// <summary>
+        /// フレームモードの行の表示を、編集中の表情のフレームモードと編集中のフレームに合わせる。
+        /// セグメント切替は選んでいる側を強調し、編集中の表情が無いときは無効にする。
+        /// フレームバーと ⓘ は 2 フレームのときだけ表示し、編集中のフレームの◆を強調する。
+        /// </summary>
         private void UpdateFrameModeControls()
         {
             var hasModel = _model != null;
             var frameMode = hasModel ? _model.frameMode : ExpressionFrameMode.SingleFrame;
-
-            _frameModeField?.SetValueWithoutNotify(GetFrameModeLabel(frameMode));
-            _frameModeField?.SetEnabled(hasModel);
-
             var isWeightBlend = hasModel && frameMode == ExpressionFrameMode.WeightBlend;
-            _weightModeContainer?.EnableInClassList("hidden", !isWeightBlend);
+
+            _singleFrameModeButton?.EnableInClassList(ExpressionEditorStyles.SelectedClassName, !isWeightBlend);
+            _weightBlendModeButton?.EnableInClassList(ExpressionEditorStyles.SelectedClassName, isWeightBlend);
+            _singleFrameModeButton?.SetEnabled(hasModel);
+            _weightBlendModeButton?.SetEnabled(hasModel);
+
+            _frameBar?.EnableInClassList(ExpressionEditorStyles.HiddenClassName, !isWeightBlend);
             _frameModeInfoIcon?.EnableInClassList(ExpressionEditorStyles.HiddenClassName, !isWeightBlend);
             if (!isWeightBlend)
             {
@@ -2575,33 +3283,47 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 _blendShapeListView?.SetEditingFrame(_editingFrame);
             }
 
-            _startFrameButton?.SetEnabled(isWeightBlend);
-            _endFrameButton?.SetEnabled(isWeightBlend);
-            _loadStartFromRendererButton?.SetEnabled(isWeightBlend);
-            _previewWeightSlider?.SetEnabled(isWeightBlend);
-            _startFrameButton?.EnableInClassList("selected", _editingFrame == ExpressionEditFrame.Start);
-            _endFrameButton?.EnableInClassList("selected", _editingFrame == ExpressionEditFrame.End);
+            SetFrameBarEnabled(isWeightBlend);
+            _startFrameMarker?.EnableInClassList(ExpressionEditorStyles.SelectedClassName, _editingFrame == ExpressionEditFrame.Start);
+            _endFrameMarker?.EnableInClassList(ExpressionEditorStyles.SelectedClassName, _editingFrame == ExpressionEditFrame.End);
             _previewWeightSlider?.SetValueWithoutNotify(_previewWeight);
             _partialImportView?.SetEditingFrame(_editingFrame);
+        }
+
+        /// <summary>
+        /// フレームバーの◆・▾・ウェイトプレビューのつまみを、2 フレームのときだけ使えるようにする。
+        /// </summary>
+        private void SetFrameBarEnabled(bool isWeightBlend)
+        {
+            _startFrameMarker?.SetEnabled(isWeightBlend);
+            _startFrameMenuButton?.SetEnabled(isWeightBlend);
+            _endFrameMarker?.SetEnabled(isWeightBlend);
+            _previewWeightSlider?.SetEnabled(isWeightBlend);
+        }
+
+        /// <summary>
+        /// 保存（上書き保存・名前を付けて保存）できる状態かを返す。参照クリップとの差分では参照クリップが必要。
+        /// </summary>
+        private bool CanSaveOutput()
+        {
+            return _model != null
+                && (_outputMode != BlendShapeOutputMode.ReferenceClipDiff || _referenceClip != null);
         }
 
         private void UpdateButtonStates()
         {
             var hasModel = _model != null;
-            var canSaveOutput = hasModel
-                && (_outputMode != BlendShapeOutputMode.ReferenceClipDiff || _referenceClip != null);
+            var canSaveOutput = CanSaveOutput();
             _saveButton?.SetEnabled(canSaveOutput);
-            _saveAsButton?.SetEnabled(canSaveOutput);
+            _saveMenuButton?.SetEnabled(canSaveOutput);
             _newButton?.SetEnabled(_avatarField != null && _avatarField.value != null && _rendererField != null && _rendererField.value != null);
-            _previewToggle?.SetEnabled(_pendingThumbnailCapture == null);
-            _frameModeField?.SetEnabled(hasModel);
+            _previewButton?.SetEnabled(_pendingThumbnailCapture == null);
+            _singleFrameModeButton?.SetEnabled(hasModel);
+            _weightBlendModeButton?.SetEnabled(hasModel);
             _outputModeField?.SetEnabled(hasModel);
-            _referenceClipField?.SetEnabled(hasModel && _outputMode == BlendShapeOutputMode.ReferenceClipDiff);
+            UpdateReferenceClipField();
             _sceneInfluenceFilterButton?.SetEnabled(CanUseSceneInfluenceFilter());
-            _startFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
-            _endFrameButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
-            _loadStartFromRendererButton?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
-            _previewWeightSlider?.SetEnabled(hasModel && _model.frameMode == ExpressionFrameMode.WeightBlend);
+            SetFrameBarEnabled(IsWeightBlendMode());
         }
 
         /// <summary>
@@ -3114,8 +3836,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 return;
             }
 
-            var shouldEnablePreview = _previewToggle != null
-                ? _previewToggle.value
+            var shouldEnablePreview = _previewButton != null
+                ? _previewEnabled
                 : previousPreviewEnabled;
             if (shouldEnablePreview)
             {
@@ -3140,6 +3862,19 @@ namespace MitarashiDango.FacialExpressionController.Editor
             UpdateFrameModeControls();
             MarkUnsaved();
             RequestPreview();
+        }
+
+        /// <summary>
+        /// クリックでメニューを開くボタン。「保存」の横と、フレームバーの始点の◆の横の ▾ に使う。
+        /// </summary>
+        private sealed class DropdownMenuButton : Button, IToolbarMenuElement
+        {
+            public DropdownMenuButton(Action clickEvent)
+                : base(clickEvent)
+            {
+            }
+
+            public DropdownMenu menu { get; set; } = new DropdownMenu();
         }
     }
 }

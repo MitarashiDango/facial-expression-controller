@@ -633,6 +633,10 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             Assert.That(container.IndexOf(header), Is.Zero, "ヘッダーは一覧の上に置く");
             Assert.That(container.IndexOf(GetListViewField<ListView>(listView, "_listView")), Is.EqualTo(1));
             Assert.That(header.Query<Label>().ToList().Select(label => label.text), Is.SupersetOf(new[] { "名前", "値" }));
+            Assert.That(
+                header.Query<Label>().ToList().Single(label => label.text == "値").tooltip,
+                Is.EqualTo(BlendShapeListView.ValueCaptionTooltip),
+                "「値」の tooltip で、初期値の目盛りともう一方のフレームの印を説明する");
             Assert.That(headerButton.tooltip, Is.EqualTo(BlendShapeListView.HeaderTargetTooltip));
             Assert.That(headerButton.Contains(headerToggle), Is.True);
             Assert.That(headerButton.Contains(menuIcon), Is.True);
@@ -879,6 +883,126 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             Assert.That(tick.parent.IndexOf(tick), Is.LessThan(tick.parent.IndexOf(dragger)), "つまみより下に描く");
         }
 
+        [Test]
+        public void Row_OtherFrameMarker_ShowsOtherFrameValueOnlyInTwoFrameMode()
+        {
+            var smile = CreateEntry("Smile");
+            smile.initialValue = 10f;
+            smile.value = 20f;
+            smile.endValue = 80f;
+            var blink = CreateEntry("Blink");
+            blink.value = 5f;
+            blink.endValue = 45f;
+            var model = CreateModel(smile, blink);
+            var listView = CreateListView(model);
+            var refreshCount = 0;
+            listView.VisibleEntriesChanged += () => refreshCount++;
+            var row = CreateBoundRow(listView, smile);
+            var slider = GetRowField<Slider>(row, "_slider");
+            var tick = GetRowField<VisualElement>(row, "_initialValueTick");
+            var marker = GetRowField<VisualElement>(row, "_otherFrameMarker");
+            var dragger = slider.Q(className: BaseSlider<float>.draggerUssClassName);
+
+            Assert.That(marker.pickingMode, Is.EqualTo(PickingMode.Ignore));
+            Assert.That(marker.ClassListContains("blendshape-other-frame-marker"), Is.True);
+            Assert.That(marker.ClassListContains("blendshape-initial-tick"), Is.False, "初期値の目盛りとは別の見た目にする");
+            Assert.That(marker.parent, Is.SameAs(dragger.parent), "つまみと同じ座標系に置く");
+            Assert.That(marker.parent.IndexOf(marker), Is.GreaterThan(marker.parent.IndexOf(tick)), "初期値の目盛りより上に描く");
+            Assert.That(marker.parent.IndexOf(marker), Is.LessThan(marker.parent.IndexOf(dragger)), "つまみより下に描く");
+            AssertOtherFrameMarkerHidden(row, "1 フレームでは出さない");
+
+            model.frameMode = ExpressionFrameMode.WeightBlend;
+            listView.SetEditingFrame(ExpressionEditFrame.Start);
+
+            Assert.That(refreshCount, Is.EqualTo(1), "フレームモードが変わったら、編集するフレームが同じでも一覧を更新する");
+
+            InvokeRowMethod(row, "Bind", smile);
+
+            AssertOtherFrameMarker(row, 80f, "始点の編集中は終点の値を示す");
+            Assert.That(slider.value, Is.EqualTo(20f), "つまみは編集中のフレームの値");
+
+            listView.SetEditingFrame(ExpressionEditFrame.End);
+            InvokeRowMethod(row, "Bind", smile);
+
+            Assert.That(refreshCount, Is.EqualTo(2));
+            AssertOtherFrameMarker(row, 20f, "終点の編集中は始点の値を示す");
+            Assert.That(slider.value, Is.EqualTo(80f));
+
+            Undo.IncrementCurrentGroup();
+            InvokeRowFloatHandler(row, "OnSliderChanged", 60f);
+            Undo.FlushUndoRecordObjects();
+
+            Assert.That(smile.endValue, Is.EqualTo(60f));
+            AssertOtherFrameMarker(row, 20f, "編集中のフレームの値を変えても、もう一方のフレームの印は動かない");
+
+            listView.SetEditingFrame(ExpressionEditFrame.Start);
+            InvokeRowMethod(row, "Bind", smile);
+
+            AssertOtherFrameMarker(row, 60f, "フレームを切り替えると、編集した終点の値を示す");
+
+            Undo.IncrementCurrentGroup();
+            InvokeRowFloatHandler(row, "OnValueChanged", 30f);
+            Undo.FlushUndoRecordObjects();
+            Undo.IncrementCurrentGroup();
+
+            Assert.That(smile.value, Is.EqualTo(30f));
+            AssertOtherFrameMarker(row, 60f);
+
+            listView.SetEditingFrame(ExpressionEditFrame.End);
+            InvokeRowMethod(row, "Bind", smile);
+
+            AssertOtherFrameMarker(row, 30f, "編集した始点の値を示す");
+
+            Undo.PerformUndo();
+            var undoneSmile = model.entries.Single(entry => entry.name == "Smile");
+            listView.Refresh();
+            InvokeRowMethod(row, "Bind", undoneSmile);
+
+            Assert.That(undoneSmile.value, Is.EqualTo(20f));
+            AssertOtherFrameMarker(row, 20f, "Undo の後は戻した値を示す");
+
+            Undo.PerformRedo();
+            var redoneSmile = model.entries.Single(entry => entry.name == "Smile");
+            listView.Refresh();
+            InvokeRowMethod(row, "Bind", redoneSmile);
+
+            AssertOtherFrameMarker(row, 30f, "Redo の後はやり直した値を示す");
+
+            // 一覧の行の使い回しと同じく、割り当てを外してから別の項目を割り当てる。
+            var currentBlink = model.entries.Single(entry => entry.name == "Blink");
+            InvokeRowMethod(row, "Unbind");
+            InvokeRowMethod(row, "Bind", currentBlink);
+
+            AssertOtherFrameMarker(row, 5f, "別の項目を割り当て直すと、その項目の値を示す");
+
+            InvokeRowMethod(row, "Unbind");
+            InvokeRowMethod(row, "Bind", redoneSmile);
+
+            AssertOtherFrameMarker(row, 30f, "元の項目を割り当て直すと、その項目の値を示す");
+
+            Undo.IncrementCurrentGroup();
+            InvokeRowMethod(row, "OnResetClicked");
+            Undo.FlushUndoRecordObjects();
+            Undo.IncrementCurrentGroup();
+
+            Assert.That(redoneSmile.value, Is.EqualTo(10f));
+            Assert.That(redoneSmile.endValue, Is.EqualTo(10f));
+            AssertOtherFrameMarker(row, 10f, "行で両方のフレームを初期値に戻すと、もう一方のフレームの印も初期値へ置き直す");
+
+            listView.SetEditingFrame(ExpressionEditFrame.Start);
+            model.frameMode = ExpressionFrameMode.SingleFrame;
+            var refreshCountBeforeSingleFrame = refreshCount;
+            listView.SetEditingFrame(ExpressionEditFrame.Start);
+            InvokeRowMethod(row, "Bind", currentBlink);
+
+            Assert.That(refreshCount, Is.EqualTo(refreshCountBeforeSingleFrame + 1), "1 フレームに戻したときも、編集するフレームが同じでも一覧を更新する");
+            AssertOtherFrameMarkerHidden(row, "1 フレームに戻したら出さない");
+
+            listView.SetEditingFrame(ExpressionEditFrame.Start);
+
+            Assert.That(refreshCount, Is.EqualTo(refreshCountBeforeSingleFrame + 1), "フレームもフレームモードも変わらなければ更新しない");
+        }
+
         [TestCase(0f, 200f, 10f, 0f, 0f, 5f)]
         [TestCase(1f, 200f, 10f, 0f, 0f, 195f)]
         [TestCase(0.5f, 200f, 10f, 0f, 0f, 100f)]
@@ -906,6 +1030,18 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
         [Test]
         public void ExpressionEditorIcons_AllIconsResolveForBothSkins()
         {
+            Assert.That(
+                ExpressionEditorIcons.All,
+                Is.SupersetOf(new[]
+                {
+                    ExpressionEditorIcons.SaveMenu,
+                    ExpressionEditorIcons.PreviewVisible,
+                    ExpressionEditorIcons.PreviewHidden,
+                    ExpressionEditorIcons.Warning,
+                    ExpressionEditorIcons.StartFrameMenu,
+                }),
+                "ドキュメントバー・下部タブ・フレームバーのアイコンも確認する");
+
             foreach (var icon in ExpressionEditorIcons.All)
             {
                 Assert.That(icon.FallbackText, Is.Not.Empty);
@@ -1196,6 +1332,49 @@ namespace MitarashiDango.FacialExpressionController.Editor.Tests
             var field = row.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(field, Is.Not.Null, $"Field was not found: {fieldName}");
             return (T)field.GetValue(row);
+        }
+
+        /// <summary>
+        /// 行のスライダー・数値欄の変更時の処理を、UI から値を変えた場合と同じ値の変更イベントで呼ぶ。
+        /// </summary>
+        private static void InvokeRowFloatHandler(VisualElement row, string methodName, float newValue)
+        {
+            using (var evt = ChangeEvent<float>.GetPooled(0f, newValue))
+            {
+                InvokeRowMethod(row, methodName, evt);
+            }
+        }
+
+        /// <summary>
+        /// もう一方のフレームの印が表示され、行が最後に印を置いた値が <paramref name="expectedValue"/> であることを確かめる。
+        /// 期待値は一覧の処理から求めず、テストで項目に設定した値（編集していない側のフレームの値）を渡す。
+        /// </summary>
+        private static void AssertOtherFrameMarker(VisualElement row, float expectedValue, string message = null)
+        {
+            var marker = GetRowField<VisualElement>(row, "_otherFrameMarker");
+            Assert.That(marker.ClassListContains(ExpressionEditorStyles.InvisibleClassName), Is.False, message);
+            var placedValue = GetRowPlacedOtherFrameValue(row);
+            Assert.That(placedValue.HasValue, Is.True, message);
+            Assert.That(placedValue.Value, Is.EqualTo(expectedValue).Within(0.0001f), message);
+        }
+
+        private static void AssertOtherFrameMarkerHidden(VisualElement row, string message)
+        {
+            var marker = GetRowField<VisualElement>(row, "_otherFrameMarker");
+            Assert.That(marker.ClassListContains(ExpressionEditorStyles.InvisibleClassName), Is.True, message);
+            Assert.That(GetRowPlacedOtherFrameValue(row), Is.Null, message);
+        }
+
+        /// <summary>
+        /// 行がもう一方のフレームの印を最後に置いた値（<c>BlendShapeRow.PlacedOtherFrameValue</c>）を読む。印を隠しているときは null。
+        /// </summary>
+        private static float? GetRowPlacedOtherFrameValue(VisualElement row)
+        {
+            var property = row.GetType().GetProperty(
+                "PlacedOtherFrameValue",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            Assert.That(property, Is.Not.Null, "BlendShapeRow.PlacedOtherFrameValue was not found.");
+            return (float?)property.GetValue(row);
         }
 
         private static void InvokeRowMethod(VisualElement row, string methodName, params object[] args)

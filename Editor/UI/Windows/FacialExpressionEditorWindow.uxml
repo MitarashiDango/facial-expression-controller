@@ -1,24 +1,36 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="True">
     <ui:VisualElement name="editor-root" class="expression-editor">
         <ui:VisualElement name="header-container" class="header-container">
-            <ui:VisualElement name="target-container" class="target-container" />
-            <ui:VisualElement name="toolbar-container" class="toolbar-container" />
-            <ui:VisualElement name="frame-mode-container" class="frame-mode-container" />
-            <ui:VisualElement name="weight-mode-container" class="weight-mode-container hidden">
-                <ui:VisualElement name="frame-tab-container" class="frame-tab-container" />
-                <ui:VisualElement name="weight-preview-container" class="weight-preview-container" />
+            <ui:VisualElement name="document-bar" class="document-bar" />
+            <ui:Foldout name="target-foldout" text="対象アバター" value="true" class="target-foldout">
+                <ui:VisualElement name="target-container" class="target-container" />
+            </ui:Foldout>
+            <ui:VisualElement name="frame-mode-container" class="frame-mode-container">
+                <ui:VisualElement name="frame-mode-segment" class="segmented-control frame-mode-segment" />
+                <ui:VisualElement name="frame-bar" class="frame-bar hidden" />
             </ui:VisualElement>
-            <ui:VisualElement name="output-settings-container" class="output-settings-container" />
-            <ui:VisualElement name="thumbnail-container" class="thumbnail-container" />
-            <ui:VisualElement name="partial-import-container" class="partial-import-container" />
             <ui:HelpBox name="message-box" text="" message-type="Info" class="hidden" />
             <ui:VisualElement name="filter-container" class="filter-container" />
         </ui:VisualElement>
-        <ui:VisualElement name="empty-state" class="empty-state">
-            <ui:Label name="empty-label" text="表示できるブレンドシェイプがありません。" class="empty-label" />
+        <ui:VisualElement name="list-pane" class="list-pane">
+            <ui:VisualElement name="empty-state" class="empty-state">
+                <ui:Label name="empty-label" text="表示できるブレンドシェイプがありません。" class="empty-label" />
+            </ui:VisualElement>
+            <ui:VisualElement name="list-panel" class="list-panel">
+                <ui:VisualElement name="blendshape-list-container" class="list-container" />
+            </ui:VisualElement>
         </ui:VisualElement>
-        <ui:VisualElement name="list-panel" class="list-panel">
-            <ui:VisualElement name="blendshape-list-container" class="list-container" />
+        <ui:VisualElement name="bottom-tab-panel" class="bottom-tab-panel">
+            <ui:ScrollView name="thumbnail-tab-page" class="bottom-tab-page hidden">
+                <ui:VisualElement name="thumbnail-container" class="thumbnail-container" />
+            </ui:ScrollView>
+            <ui:ScrollView name="partial-import-tab-page" class="bottom-tab-page hidden">
+                <ui:VisualElement name="partial-import-container" class="partial-import-container" />
+            </ui:ScrollView>
+            <ui:ScrollView name="output-settings-tab-page" class="bottom-tab-page hidden">
+                <ui:VisualElement name="output-settings-container" class="output-settings-container" />
+            </ui:ScrollView>
         </ui:VisualElement>
+        <ui:VisualElement name="bottom-tab-bar" class="bottom-tab-bar" />
     </ui:VisualElement>
 </ui:UXML>

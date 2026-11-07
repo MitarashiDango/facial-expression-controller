@@ -90,6 +90,42 @@ namespace MitarashiDango.FacialExpressionController.Editor
             "console.infoicon.sml",
             "説明");
 
+        /// <summary>
+        /// 「保存」の横の ▾ アイコン。その他の保存方法（名前を付けて保存）のメニューを開く。
+        /// 画像は一覧ヘッダーの ▾ と同じで、読み込めない場合の代わりの文字だけを変える。
+        /// </summary>
+        internal static readonly ExpressionEditorIcon SaveMenu = new ExpressionEditorIcon(
+            "d_icon dropdown",
+            "icon dropdown",
+            "別名");
+
+        /// <summary>
+        /// フレームバーの始点の◆の横の ▾ アイコン。始点の操作（Skinned Mesh Renderer の現在値の読み込み）のメニューを開く。
+        /// 画像は一覧ヘッダーの ▾ と同じで、読み込めない場合の代わりの文字だけを変える。
+        /// </summary>
+        internal static readonly ExpressionEditorIcon StartFrameMenu = new ExpressionEditorIcon(
+            "d_icon dropdown",
+            "icon dropdown",
+            "読込");
+
+        /// <summary>シーンへのプレビューがオンのときの目のアイコン。Hierarchy の表示切り替えと同じ画像を使う。</summary>
+        internal static readonly ExpressionEditorIcon PreviewVisible = new ExpressionEditorIcon(
+            "d_scenevis_visible",
+            "scenevis_visible",
+            "プレビュー");
+
+        /// <summary>シーンへのプレビューがオフのときの、閉じた目のアイコン。</summary>
+        internal static readonly ExpressionEditorIcon PreviewHidden = new ExpressionEditorIcon(
+            "d_scenevis_hidden",
+            "scenevis_hidden",
+            "プレビュー切");
+
+        /// <summary>出力設定に警告があることをタブで示す警告アイコン。</summary>
+        internal static readonly ExpressionEditorIcon Warning = new ExpressionEditorIcon(
+            "d_console.warnicon.sml",
+            "console.warnicon.sml",
+            "警告");
+
         /// <summary>このクラスで定義しているすべてのアイコン。</summary>
         internal static IReadOnlyList<ExpressionEditorIcon> All { get; } = new[]
         {
@@ -100,6 +136,11 @@ namespace MitarashiDango.FacialExpressionController.Editor
             ScenePick,
             Clear,
             Info,
+            SaveMenu,
+            StartFrameMenu,
+            PreviewVisible,
+            PreviewHidden,
+            Warning,
         };
 
         /// <summary>高解像度版のアイコン名に付く接尾辞。</summary>

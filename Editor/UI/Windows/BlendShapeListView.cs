@@ -53,6 +53,9 @@ namespace MitarashiDango.FacialExpressionController.Editor
         internal const string HeaderTargetTooltip =
             "全件の編集・出力対象の状態です。クリックすると一括変更メニューを開きます。\n"
             + "一括変更は、検索や表示フィルターにかかわらず、すべてのブレンドシェイプへ適用します。";
+        internal const string ValueCaptionTooltip =
+            "スライダー上の縦線は初期値を示します。\n"
+            + "2 フレームのときは、もう一方のフレームの値を中抜きのひし形で示します（始点の編集中は終点、終点の編集中は始点の値）。";
 
         /// <summary>
         /// システム除外理由ごとの呼び方。鍵アイコンと名前の tooltip には、この順で並べる。
@@ -80,6 +83,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
         private bool _showEditableOnly;
         private bool _showOutputOnly;
         private ExpressionEditFrame _editingFrame = ExpressionEditFrame.Start;
+        private ExpressionFrameMode _refreshedFrameMode = ExpressionFrameMode.SingleFrame;
         private BlendShapeOutputMode _outputMode = BlendShapeOutputMode.AllTargets;
         private IReadOnlyDictionary<int, BlendShapeInfluenceResult> _spatialInfluenceResults;
         private IReadOnlyDictionary<BlendShapeEntry, BlendShapeOutputDecision> _outputDecisions =
@@ -208,9 +212,13 @@ namespace MitarashiDango.FacialExpressionController.Editor
             Refresh();
         }
 
+        /// <summary>
+        /// 一覧で編集するフレームを設定する。編集するフレームか、前回一覧を更新したときから表情のフレームモードが
+        /// 変わっている場合は一覧を更新する（行の値と、もう一方のフレームの値の印を表示し直す）。
+        /// </summary>
         public void SetEditingFrame(ExpressionEditFrame editingFrame)
         {
-            if (_editingFrame == editingFrame)
+            if (_editingFrame == editingFrame && _refreshedFrameMode == GetFrameMode())
             {
                 return;
             }
@@ -221,6 +229,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
 
         public void Refresh()
         {
+            _refreshedFrameMode = GetFrameMode();
             _items.Clear();
             foreach (var entry in EnumerateVisibleEntries())
             {
@@ -498,7 +507,10 @@ namespace MitarashiDango.FacialExpressionController.Editor
             nameCaption.AddToClassList("blendshape-header-name");
             header.Add(nameCaption);
 
-            var valueCaption = new Label("値");
+            var valueCaption = new Label("値")
+            {
+                tooltip = ValueCaptionTooltip,
+            };
             valueCaption.AddToClassList("blendshape-header-value");
             header.Add(valueCaption);
 
@@ -715,6 +727,27 @@ namespace MitarashiDango.FacialExpressionController.Editor
             Changed?.Invoke();
         }
 
+        private ExpressionFrameMode GetFrameMode()
+        {
+            return _model != null ? _model.frameMode : ExpressionFrameMode.SingleFrame;
+        }
+
+        /// <summary>
+        /// 2 フレームのとき、編集していない側のフレームの値（始点の編集中は終点、終点の編集中は始点の値）を返す。
+        /// 1 フレームのときは false を返す。
+        /// </summary>
+        private bool TryGetOtherFrameValue(BlendShapeEntry entry, out float value)
+        {
+            value = 0f;
+            if (entry == null || GetFrameMode() != ExpressionFrameMode.WeightBlend)
+            {
+                return false;
+            }
+
+            value = _editingFrame == ExpressionEditFrame.End ? entry.value : entry.endValue;
+            return true;
+        }
+
         private float GetDisplayValue(BlendShapeEntry entry)
         {
             if (_model != null
@@ -825,12 +858,20 @@ namespace MitarashiDango.FacialExpressionController.Editor
             private readonly VisualElement _sliderDragger;
             private readonly VisualElement _sliderTracker;
             private readonly VisualElement _initialValueTick;
+            private readonly VisualElement _otherFrameMarker;
             private readonly FloatField _valueField;
             private readonly Button _entryResetButton;
             private readonly ExpressionEditorIconElement _entryResetIcon;
             private readonly Label _outputStatusLabel;
             private BlendShapeEntry _entry;
             private bool _ignoreChange;
+
+            /// <summary>
+            /// もう一方のフレームの値の印を最後に置いた値。印を隠しているときは null。
+            /// レイアウト前で位置をまだ決められないときも、置く値として指定した値を持つ。
+            /// テストで、編集・フレームの切り替え・割り当て直しの後に印を置き直したかを確かめるためのもので、通常の処理からは使わない。
+            /// </summary>
+            internal float? PlacedOtherFrameValue { get; private set; }
 
             public BlendShapeRow(BlendShapeListView owner)
             {
@@ -871,17 +912,24 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     pickingMode = PickingMode.Ignore,
                 };
                 _initialValueTick.AddToClassList("blendshape-initial-tick");
+                _otherFrameMarker = new VisualElement
+                {
+                    pickingMode = PickingMode.Ignore,
+                };
+                _otherFrameMarker.AddToClassList("blendshape-other-frame-marker");
+                _otherFrameMarker.AddToClassList(ExpressionEditorStyles.InvisibleClassName);
                 _sliderDragger = _slider.Q(className: BaseSlider<float>.draggerUssClassName);
                 _sliderTracker = _slider.Q(className: BaseSlider<float>.trackerUssClassName);
                 var dragContainer = _sliderDragger?.parent;
                 if (dragContainer != null)
                 {
-                    // つまみより下、溝より上に描くため、溝の直後へ入れる。
+                    // つまみより下、溝より上に描くため、溝の直後へ入れる。もう一方のフレームの印は目盛りの上に重ねる。
                     var insertIndex = _sliderTracker != null && _sliderTracker.parent == dragContainer
                         ? dragContainer.IndexOf(_sliderTracker) + 1
                         : dragContainer.IndexOf(_sliderDragger);
                     dragContainer.Insert(insertIndex, _initialValueTick);
-                    dragContainer.RegisterCallback<GeometryChangedEvent>(_ => UpdateInitialValueTick());
+                    dragContainer.Insert(insertIndex + 1, _otherFrameMarker);
+                    dragContainer.RegisterCallback<GeometryChangedEvent>(_ => UpdateSliderMarkers());
                 }
 
                 _valueField = new FloatField();
@@ -943,7 +991,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 EnableInClassList("changed", IsChanged(entry));
                 EnableInClassList("output-scheduled", _owner.IsOutputScheduled(entry));
                 EnableInClassList("output-skipped", _owner._outputMode != BlendShapeOutputMode.AllTargets && !_owner.IsOutputScheduled(entry));
-                UpdateInitialValueTick();
+                UpdateSliderMarkers();
 
                 _ignoreChange = false;
             }
@@ -1035,17 +1083,54 @@ namespace MitarashiDango.FacialExpressionController.Editor
             }
 
             /// <summary>
+            /// スライダー上の印（初期値の目盛りと、もう一方のフレームの値の印）を表示し直す。
+            /// </summary>
+            private void UpdateSliderMarkers()
+            {
+                UpdateInitialValueTick();
+                UpdateOtherFrameMarker();
+            }
+
+            /// <summary>
             /// 初期値の目盛りを、スライダーのつまみが初期値にあるときの中心位置へ置く。
-            /// レイアウトが確定していない間は何もしない（ジオメトリ変更時に再計算する）。
             /// </summary>
             private void UpdateInitialValueTick()
             {
-                if (_entry == null || _sliderDragger == null || _initialValueTick.parent == null)
+                if (_entry == null)
                 {
                     return;
                 }
 
-                var containerLayout = _initialValueTick.parent.layout;
+                PlaceSliderMarker(_initialValueTick, _entry.initialValue);
+            }
+
+            /// <summary>
+            /// 2 フレームのときは、もう一方のフレームの値の印を、スライダーのつまみがその値にあるときの中心位置へ置いて表示する。
+            /// 1 フレームのときと、行に項目を割り当てていないときは隠す。
+            /// </summary>
+            private void UpdateOtherFrameMarker()
+            {
+                var hasOtherFrame = _owner.TryGetOtherFrameValue(_entry, out var otherFrameValue);
+                _otherFrameMarker.EnableInClassList(ExpressionEditorStyles.InvisibleClassName, !hasOtherFrame);
+                PlacedOtherFrameValue = hasOtherFrame ? otherFrameValue : (float?)null;
+                if (hasOtherFrame)
+                {
+                    PlaceSliderMarker(_otherFrameMarker, otherFrameValue);
+                }
+            }
+
+            /// <summary>
+            /// スライダー上の印を、つまみが <paramref name="value"/> にあるときの中心位置へ置く。縦位置は溝の中心に合わせる。
+            /// レイアウトが確定していない間は何もしない（ジオメトリ変更時に再計算する）。
+            /// </summary>
+            private void PlaceSliderMarker(VisualElement marker, float value)
+            {
+                if (_sliderDragger == null || marker.parent == null)
+                {
+                    return;
+                }
+
+                var containerLayout = marker.parent.layout;
                 var containerWidth = containerLayout.width;
                 if (float.IsNaN(containerWidth) || containerWidth <= 0f)
                 {
@@ -1053,7 +1138,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 }
 
                 var draggerStyle = _sliderDragger.resolvedStyle;
-                var normalizedValue = Mathf.InverseLerp(_slider.lowValue, _slider.highValue, _entry.initialValue);
+                var normalizedValue = Mathf.InverseLerp(_slider.lowValue, _slider.highValue, value);
                 if (_slider.inverted)
                 {
                     normalizedValue = 1f - normalizedValue;
@@ -1065,12 +1150,12 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     GetFiniteOrZero(draggerStyle.width),
                     GetFiniteOrZero(draggerStyle.marginLeft),
                     GetFiniteOrZero(draggerStyle.marginRight));
-                var tickWidth = GetFiniteOrZero(_initialValueTick.resolvedStyle.width);
-                _initialValueTick.style.left = center - tickWidth * 0.5f;
+                var markerWidth = GetFiniteOrZero(marker.resolvedStyle.width);
+                marker.style.left = center - markerWidth * 0.5f;
 
-                // 縦位置は溝の中心に合わせる。溝が見つからない場合はつまみ置き場の中心にする。
+                // 溝が見つからない場合はつまみ置き場の中心にする。
                 var centerY = GetFiniteOrZero(containerLayout.height) * 0.5f;
-                if (_sliderTracker != null && _sliderTracker.parent == _initialValueTick.parent)
+                if (_sliderTracker != null && _sliderTracker.parent == marker.parent)
                 {
                     var trackerLayout = _sliderTracker.layout;
                     if (!float.IsNaN(trackerLayout.y) && !float.IsNaN(trackerLayout.height))
@@ -1079,8 +1164,8 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     }
                 }
 
-                var tickHeight = GetFiniteOrZero(_initialValueTick.resolvedStyle.height);
-                _initialValueTick.style.top = centerY - tickHeight * 0.5f;
+                var markerHeight = GetFiniteOrZero(marker.resolvedStyle.height);
+                marker.style.top = centerY - markerHeight * 0.5f;
             }
 
             private static float GetFiniteOrZero(float value)
@@ -1112,6 +1197,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                 {
                     _valueField.SetValueWithoutNotify(_owner.GetDisplayValue(entry));
                     UpdateResetButton(entry);
+                    UpdateOtherFrameMarker();
                     EnableInClassList("changed", IsChanged(entry));
                 }
                 finally
@@ -1141,6 +1227,7 @@ namespace MitarashiDango.FacialExpressionController.Editor
                     _slider.SetValueWithoutNotify(displayValue);
                     _valueField.SetValueWithoutNotify(displayValue);
                     UpdateResetButton(entry);
+                    UpdateOtherFrameMarker();
                     EnableInClassList("changed", IsChanged(entry));
                 }
                 finally
